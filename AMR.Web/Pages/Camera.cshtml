@@ -12,6 +12,39 @@
         </span>
     </div>
 
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <div class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label form-label-sm mb-0"><strong>카메라</strong></label>
+                    <select id="cameraSelect" class="form-select form-select-sm" style="min-width: 220px;">
+                        <option value="">-- 스캔하세요 --</option>
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <label class="form-label form-label-sm mb-0"><strong>백엔드</strong></label>
+                    <select id="backendSelect" class="form-select form-select-sm">
+                        <option value="any">일반 (USB)</option>
+                        <option value="obsensor">OBSENSOR (Orbbec)</option>
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <button id="btnScanCameras" class="btn btn-sm btn-outline-secondary">
+                        카메라 스캔
+                    </button>
+                </div>
+                <div class="col-auto">
+                    <button id="btnOpenCamera" class="btn btn-sm btn-primary">
+                        열기
+                    </button>
+                </div>
+                <div class="col-auto">
+                    <span id="scanSpinner" class="spinner-border spinner-border-sm text-secondary" style="display:none;"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="row">
         <div class="col-md-6">
             <div class="card">
@@ -25,7 +58,7 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-6">
+        <div class="col-md-6" id="depthPanel">
             <div class="card">
                 <div class="card-header py-2">
                     <strong>Depth Camera</strong>
@@ -140,6 +173,12 @@
                             $depthFeed.attr('src', '/Camera?handler=DepthStream&t=' + Date.now());
                         }
                         wasConnected = true;
+                        // Depth 패널 표시/숨김
+                        if (data.hasDepth) {
+                            $('#depthPanel').show();
+                        } else {
+                            $('#depthPanel').hide();
+                        }
                     } else {
                         $badge.removeClass('bg-success bg-secondary').addClass('bg-danger').text('Camera: 연결 끊김');
                         $error.show();
@@ -151,6 +190,50 @@
             }
 
             setInterval(checkStatus, 3000);
+
+            // 카메라 스캔
+            $('#btnScanCameras').on('click', function () {
+                var $btn = $(this);
+                $btn.prop('disabled', true);
+                $('#scanSpinner').show();
+                $.getJSON('/Camera?handler=EnumerateCameras', function (data) {
+                    var $sel = $('#cameraSelect');
+                    $sel.empty();
+                    if (data.length === 0) {
+                        $sel.append('<option value="">카메라를 찾을 수 없음</option>');
+                    } else {
+                        $.each(data, function (i, cam) {
+                            $sel.append('<option value="' + cam.index + '">' + cam.label + '</option>');
+                        });
+                    }
+                }).always(function () {
+                    $btn.prop('disabled', false);
+                    $('#scanSpinner').hide();
+                });
+            });
+
+            // 카메라 전환
+            $('#btnOpenCamera').on('click', function () {
+                var idx = $('#cameraSelect').val();
+                if (idx === '' || idx === null) return;
+                var backend = $('#backendSelect').val();
+                var $btn = $(this);
+                $btn.prop('disabled', true).text('전환 중...');
+                $.post('/Camera?handler=SwitchCamera', {
+                    deviceIndex: parseInt(idx),
+                    backend: backend
+                }, function (res) {
+                    if (res.success) {
+                        wasConnected = false;
+                        setTimeout(function () {
+                            $rgbFeed.attr('src', '/Camera?handler=RgbStream&t=' + Date.now());
+                            $depthFeed.attr('src', '/Camera?handler=DepthStream&t=' + Date.now());
+                        }, 1500);
+                    }
+                }).always(function () {
+                    $btn.prop('disabled', false).text('열기');
+                });
+            });
 
             $rgbFeed.on('error', function () {
                 setTimeout(function () {

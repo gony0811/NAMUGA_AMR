@@ -3,6 +3,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenCvSharp;
 using SkiaSharp;
+using ZXing;
+using ZXing.SkiaSharp;
 
 namespace AMR.Service;
 
@@ -18,10 +20,18 @@ public class CameraSettings
     public int WarmupDelayMs { get; set; } = 500;
 }
 
+public class CameraDeviceInfo
+{
+    public int Index { get; set; }
+    public string Label { get; set; } = "";
+}
+
 public class CameraService : BackgroundService
 {
     private readonly ILogger<CameraService> _logger;
     private readonly CameraSettings _settings;
+
+    private const int CAP_OBSENSOR = 2600;
 
     private VideoCapture? _capture;
     private byte[] _currentRgbFrame = Array.Empty<byte>();
@@ -31,15 +41,32 @@ public class CameraService : BackgroundService
     private readonly object _qrLock = new();
     private volatile bool _isConnected;
 
-    private readonly QRCodeDetector _qrDetector = new();
+    private readonly BarcodeReader _qrReader = new()
+    {
+        Options = new ZXing.Common.DecodingOptions
+        {
+            PossibleFormats = [BarcodeFormat.QR_CODE],
+            TryHarder = true
+        }
+    };
     private QrDetectionResult _lastQrResult = new();
 
+    private CancellationTokenSource? _switchCts;
+    private readonly object _switchLock = new();
+    private volatile int _activeDeviceIndex;
+    private volatile VideoCaptureAPIs _activeBackend = (VideoCaptureAPIs)CAP_OBSENSOR;
+    private volatile bool _isEnumerating;
+
     public bool IsConnected => _isConnected;
+    public int ActiveDeviceIndex => _activeDeviceIndex;
+    public VideoCaptureAPIs ActiveBackend => _activeBackend;
+    public bool HasDepthSupport => _activeBackend == (VideoCaptureAPIs)CAP_OBSENSOR;
 
     public CameraService(ILogger<CameraService> logger, CameraSettings settings)
     {
         _logger = logger;
         _settings = settings;
+        _activeDeviceIndex = settings.DeviceIndex;
     }
 
     public byte[] GetCurrentRgbFrame()
@@ -68,24 +95,36 @@ public class CameraService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("CameraService 시작 (DeviceIndex: {Index})", _settings.DeviceIndex);
+        _logger.LogInformation("CameraService 시작 (DeviceIndex: {Index})", _activeDeviceIndex);
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            _switchCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            var loopToken = _switchCts.Token;
             try
             {
-                await CaptureLoop(stoppingToken);
+                await CaptureLoop(loopToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 break;
             }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("카메라 전환 요청 (DeviceIndex: {Index}, Backend: {Backend})",
+                    _activeDeviceIndex, _activeBackend);
+            }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "카메라 캡처 오류. 3초 후 재연결 시도...");
+                await Task.Delay(3000, stoppingToken);
+            }
+            finally
+            {
                 _isConnected = false;
                 ReleaseCapture();
-                await Task.Delay(3000, stoppingToken);
+                _switchCts?.Dispose();
+                _switchCts = null;
             }
         }
 
@@ -95,13 +134,15 @@ public class CameraService : BackgroundService
 
     private async Task CaptureLoop(CancellationToken stoppingToken)
     {
-        // OBSENSOR 백엔드(2600)로 Orbbec 카메라 접근
-        const int CAP_OBSENSOR = 2600;
-        _capture = new VideoCapture(_settings.DeviceIndex, (VideoCaptureAPIs)CAP_OBSENSOR);
+        var deviceIndex = _activeDeviceIndex;
+        var backend = _activeBackend;
+        var isObsensor = backend == (VideoCaptureAPIs)CAP_OBSENSOR;
+
+        _capture = new VideoCapture(deviceIndex, backend);
 
         if (!_capture.IsOpened())
         {
-            _logger.LogWarning("카메라 열기 실패 (DeviceIndex: {Index})", _settings.DeviceIndex);
+            _logger.LogWarning("카메라 열기 실패 (DeviceIndex: {Index}, Backend: {Backend})", deviceIndex, backend);
             _isConnected = false;
             ReleaseCapture();
             await Task.Delay(3000, stoppingToken);
@@ -111,7 +152,7 @@ public class CameraService : BackgroundService
         _capture.Set(VideoCaptureProperties.FrameWidth, _settings.FrameWidth);
         _capture.Set(VideoCaptureProperties.FrameHeight, _settings.FrameHeight);
 
-        _logger.LogInformation("카메라 열림 (DeviceIndex: {Index})", _settings.DeviceIndex);
+        _logger.LogInformation("카메라 열림 (DeviceIndex: {Index}, Backend: {Backend})", deviceIndex, backend);
 
         // 카메라 워밍업 대기
         await Task.Delay(_settings.WarmupDelayMs, stoppingToken);
@@ -142,9 +183,19 @@ public class CameraService : BackgroundService
                 continue;
             }
 
-            // channel 0: depth map, channel 1: BGR image
-            var hasDepth = _capture.Retrieve(depthFrame, 0) && !depthFrame.Empty();
-            var hasRgb = _capture.Retrieve(rgbFrame, 1) && !rgbFrame.Empty();
+            bool hasRgb, hasDepth;
+            if (isObsensor)
+            {
+                // OBSENSOR: channel 0 = depth map, channel 1 = BGR image
+                hasDepth = _capture.Retrieve(depthFrame, 0) && !depthFrame.Empty();
+                hasRgb = _capture.Retrieve(rgbFrame, 1) && !rgbFrame.Empty();
+            }
+            else
+            {
+                // 일반 USB 카메라: channel 0 = BGR image, depth 없음
+                hasRgb = _capture.Retrieve(rgbFrame, 0) && !rgbFrame.Empty();
+                hasDepth = false;
+            }
 
             if (!hasDepth && !hasRgb)
             {
@@ -198,17 +249,34 @@ public class CameraService : BackgroundService
     {
         try
         {
-            var decoded = _qrDetector.DetectAndDecode(rgbFrame, out var points);
+            // BGR → BGRA 변환 후 SKBitmap 생성
+            using var bgraFrame = new Mat();
+            Cv2.CvtColor(rgbFrame, bgraFrame, ColorConversionCodes.BGR2BGRA);
+            var info = new SKImageInfo(bgraFrame.Width, bgraFrame.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
+            using var bitmap = new SKBitmap();
+            bitmap.InstallPixels(info, bgraFrame.Data, bgraFrame.Width * 4);
 
-            if (!string.IsNullOrEmpty(decoded) && points.Length >= 4)
+            var result = _qrReader.Decode(bitmap);
+
+            if (result?.Text is { Length: > 0 } decodedText && result.ResultPoints.Length >= 3)
             {
-                // 중심 좌표 계산 (4개 꼭짓점 평균)
-                var centerX = (points[0].X + points[1].X + points[2].X + points[3].X) / 4.0;
-                var centerY = (points[0].Y + points[1].Y + points[2].Y + points[3].Y) / 4.0;
+                var rp = result.ResultPoints;
 
-                // 회전 각도 계산 (상단 변: points[0]→points[1] 기준)
-                var dx = points[1].X - points[0].X;
-                var dy = points[1].Y - points[0].Y;
+                // ZXing ResultPoints: [bottomLeft, topLeft, topRight, (alignmentPattern - optional)]
+                double p0X = rp[0].X, p0Y = rp[0].Y; // bottom-left
+                double p1X = rp[1].X, p1Y = rp[1].Y; // top-left
+                double p2X = rp[2].X, p2Y = rp[2].Y; // top-right
+
+                // 4번째 점 (bottom-right) 계산: p0 + (p2 - p1)
+                double p3X = p0X + (p2X - p1X), p3Y = p0Y + (p2Y - p1Y);
+
+                // 중심 좌표 계산
+                var centerX = (p0X + p1X + p2X + p3X) / 4.0;
+                var centerY = (p0Y + p1Y + p2Y + p3Y) / 4.0;
+
+                // 회전 각도 계산 (상단 변: topLeft→topRight 기준)
+                var dx = p2X - p1X;
+                var dy = p2Y - p1Y;
                 var angle = Math.Atan2(dy, dx) * 180.0 / Math.PI;
 
                 // 카메라 프레임 중심
@@ -225,7 +293,7 @@ public class CameraService : BackgroundService
                     _lastQrResult = new QrDetectionResult
                     {
                         Detected = true,
-                        DecodedText = decoded,
+                        DecodedText = decodedText,
                         CenterX = Math.Round(centerX, 1),
                         CenterY = Math.Round(centerY, 1),
                         RotationAngle = Math.Round(angle, 1),
@@ -238,7 +306,11 @@ public class CameraService : BackgroundService
                 }
 
                 // QR코드 경계 그리기 (초록색)
-                var pts = points.Select(p => new Point((int)p.X, (int)p.Y)).ToArray();
+                var pts = new[]
+                {
+                    new Point((int)p0X, (int)p0Y), new Point((int)p1X, (int)p1Y),
+                    new Point((int)p2X, (int)p2Y), new Point((int)p3X, (int)p3Y)
+                };
                 Cv2.Polylines(rgbFrame, new[] { pts }, true, new Scalar(0, 255, 0), 2);
 
                 // 중심점 마커 (빨간색 십자)
@@ -251,11 +323,11 @@ public class CameraService : BackgroundService
                 Cv2.DrawMarker(rgbFrame, frameCenter, new Scalar(255, 0, 0),
                     MarkerTypes.Cross, 15, 1);
 
-                // 카메라 중심 → QR 중심 연결선 (노란색 점선)
+                // 카메라 중심 → QR 중심 연결선 (노란색)
                 Cv2.Line(rgbFrame, frameCenter, center, new Scalar(0, 255, 255), 1, LineTypes.Link4);
 
                 // 텍스트 오버레이
-                var label = $"QR: {decoded}";
+                var label = $"QR: {decodedText}";
                 var coordLabel = $"Center: ({centerX:F1}, {centerY:F1})  Angle: {angle:F1} deg";
                 var deltaLabel = $"Delta: ({deltaX:F1}, {deltaY:F1})";
 
@@ -330,6 +402,52 @@ public class CameraService : BackgroundService
         lock (_depthLock)
         {
             _currentDepthFrame = Array.Empty<byte>();
+        }
+    }
+
+    public void SwitchCamera(int deviceIndex, VideoCaptureAPIs backend)
+    {
+        lock (_switchLock)
+        {
+            _activeDeviceIndex = deviceIndex;
+            _activeBackend = backend;
+            _switchCts?.Cancel();
+        }
+    }
+
+    public List<CameraDeviceInfo> EnumerateCameras()
+    {
+        if (_isEnumerating)
+            return [];
+
+        _isEnumerating = true;
+        try
+        {
+            var results = new List<CameraDeviceInfo>();
+            for (var i = 0; i <= 9; i++)
+            {
+                try
+                {
+                    using var cap = new VideoCapture(i, VideoCaptureAPIs.ANY);
+                    if (cap.IsOpened())
+                    {
+                        var w = (int)cap.Get(VideoCaptureProperties.FrameWidth);
+                        var h = (int)cap.Get(VideoCaptureProperties.FrameHeight);
+                        results.Add(new CameraDeviceInfo { Index = i, Label = $"Camera {i} ({w}x{h})" });
+                        cap.Release();
+                    }
+                }
+                catch
+                {
+                    // skip unavailable device
+                }
+            }
+
+            return results;
+        }
+        finally
+        {
+            _isEnumerating = false;
         }
     }
 

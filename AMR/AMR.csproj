@@ -12,8 +12,9 @@
       <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
       <PackageReference Include="MQTTnet" Version="4.3.7.1207" />
       <PackageReference Include="NModbus" Version="3.0.81" />
-      <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260330" />
+      <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260228" />
       <PackageReference Include="SkiaSharp" Version="3.119.2" />
+      <PackageReference Include="ZXing.Net.Bindings.SkiaSharp" Version="0.16.22" />
     </ItemGroup>
 
 </Project>

@@ -2,6 +2,7 @@ using System.Text;
 using AMR.Service;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using OpenCvSharp;
 
 namespace AMR.Web.Pages;
 
@@ -21,7 +22,37 @@ public class CameraModel : PageModel
 
     public IActionResult OnGetStatus()
     {
-        return new JsonResult(new { connected = _cameraService.IsConnected });
+        return new JsonResult(new
+        {
+            connected = _cameraService.IsConnected,
+            hasDepth = _cameraService.HasDepthSupport
+        });
+    }
+
+    public IActionResult OnGetEnumerateCameras()
+    {
+        var cameras = _cameraService.EnumerateCameras();
+        return new JsonResult(cameras);
+    }
+
+    public IActionResult OnPostSwitchCamera(int deviceIndex, string backend)
+    {
+        var api = backend == "obsensor"
+            ? (VideoCaptureAPIs)2600
+            : VideoCaptureAPIs.ANY;
+        _cameraService.SwitchCamera(deviceIndex, api);
+        return new JsonResult(new { success = true });
+    }
+
+    public IActionResult OnGetCameraInfo()
+    {
+        return new JsonResult(new
+        {
+            deviceIndex = _cameraService.ActiveDeviceIndex,
+            backend = _cameraService.ActiveBackend == (VideoCaptureAPIs)2600 ? "obsensor" : "any",
+            hasDepth = _cameraService.HasDepthSupport,
+            connected = _cameraService.IsConnected
+        });
     }
 
     public IActionResult OnGetQrStatus()
@@ -42,14 +73,16 @@ public class CameraModel : PageModel
         });
     }
 
-    public async Task OnGetRgbStream()
+    public async Task<IActionResult> OnGetRgbStream()
     {
         await StreamFrames(() => _cameraService.GetCurrentRgbFrame());
+        return new EmptyResult();
     }
 
-    public async Task OnGetDepthStream()
+    public async Task<IActionResult> OnGetDepthStream()
     {
         await StreamFrames(() => _cameraService.GetCurrentDepthFrame());
+        return new EmptyResult();
     }
 
     private async Task StreamFrames(Func<byte[]> getFrame)
