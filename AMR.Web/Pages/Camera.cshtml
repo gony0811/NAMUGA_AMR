@@ -39,6 +39,83 @@
         </div>
     </div>
 
+    <div class="row mt-3">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                    <strong>QR Code Detection</strong>
+                    <span id="qrBadge" class="badge bg-secondary">감지 안됨</span>
+                </div>
+                <div class="card-body py-2">
+                    <table class="table table-sm table-borderless mb-0">
+                        <tr>
+                            <td style="width: 140px;"><strong>내용</strong></td>
+                            <td id="qrText" class="text-muted">-</td>
+                        </tr>
+                        <tr>
+                            <td><strong>QR 중심 (px)</strong></td>
+                            <td id="qrCenter" class="text-muted">-</td>
+                        </tr>
+                        <tr>
+                            <td><strong>회전 각도</strong></td>
+                            <td id="qrAngle" class="text-muted">-</td>
+                        </tr>
+                        <tr>
+                            <td><strong>카메라 중심 (px)</strong></td>
+                            <td id="frameCenter" class="text-muted">-</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Delta (px)</strong></td>
+                            <td id="qrDelta" class="text-muted">-</td>
+                        </tr>
+                        <tr>
+                            <td><strong>감지 시각</strong></td>
+                            <td id="qrTime" class="text-muted">-</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header py-2">
+                    <strong>Offset & Final Movement</strong>
+                </div>
+                <div class="card-body py-2">
+                    <div class="row g-2 mb-2">
+                        <div class="col-4">
+                            <label class="form-label form-label-sm mb-0"><strong>Offset X (px)</strong></label>
+                            <input type="number" id="offsetX" class="form-control form-control-sm" value="0" step="0.1" />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label form-label-sm mb-0"><strong>Offset Y (px)</strong></label>
+                            <input type="number" id="offsetY" class="form-control form-control-sm" value="0" step="0.1" />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label form-label-sm mb-0"><strong>Offset Angle (&deg;)</strong></label>
+                            <input type="number" id="offsetAngle" class="form-control form-control-sm" value="0" step="0.1" />
+                        </div>
+                    </div>
+                    <hr class="my-2" />
+                    <table class="table table-sm table-borderless mb-0">
+                        <tr>
+                            <td style="width: 140px;"><strong>최종 이동 좌표</strong></td>
+                            <td id="finalCoord" class="text-muted">-</td>
+                        </tr>
+                        <tr>
+                            <td><strong>최종 이동 각도</strong></td>
+                            <td id="finalAngle" class="text-muted">-</td>
+                        </tr>
+                        <tr>
+                            <td><strong>이동 거리 (px)</strong></td>
+                            <td id="finalDist" class="text-muted">-</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="cameraError" class="alert alert-warning mt-2" style="display: none;">
         카메라 연결이 끊어졌습니다. 재연결을 시도하고 있습니다...
     </div>
@@ -86,6 +163,59 @@
                     $depthFeed.attr('src', '/Camera?handler=DepthStream&t=' + Date.now());
                 }, 3000);
             });
+
+            // QR 코드 감지 상태 폴링
+            var $qrBadge = $('#qrBadge');
+            var $qrText = $('#qrText');
+            var $qrCenter = $('#qrCenter');
+            var $qrAngle = $('#qrAngle');
+            var $frameCenter = $('#frameCenter');
+            var $qrDelta = $('#qrDelta');
+            var $qrTime = $('#qrTime');
+            var $finalCoord = $('#finalCoord');
+            var $finalAngle = $('#finalAngle');
+            var $finalDist = $('#finalDist');
+
+            function checkQrStatus() {
+                $.getJSON('/Camera?handler=QrStatus', function (data) {
+                    if (data.detected) {
+                        $qrBadge.removeClass('bg-secondary').addClass('bg-success').text('감지됨');
+                        $qrText.removeClass('text-muted').text(data.decodedText);
+                        $qrCenter.removeClass('text-muted').text('X: ' + data.centerX + ',  Y: ' + data.centerY);
+                        $qrAngle.removeClass('text-muted').text(data.rotationAngle + '\u00B0');
+                        $frameCenter.removeClass('text-muted').text('X: ' + data.frameCenterX + ',  Y: ' + data.frameCenterY);
+                        $qrDelta.removeClass('text-muted').text('dX: ' + data.deltaX + ',  dY: ' + data.deltaY);
+                        $qrTime.removeClass('text-muted').text(data.detectedAt);
+
+                        // Offset 적용하여 최종 이동 좌표 계산
+                        var offX = parseFloat($('#offsetX').val()) || 0;
+                        var offY = parseFloat($('#offsetY').val()) || 0;
+                        var offAngle = parseFloat($('#offsetAngle').val()) || 0;
+
+                        var finalX = data.deltaX + offX;
+                        var finalY = data.deltaY + offY;
+                        var finalA = data.rotationAngle + offAngle;
+                        var dist = Math.sqrt(finalX * finalX + finalY * finalY);
+
+                        $finalCoord.removeClass('text-muted').text('X: ' + finalX.toFixed(1) + ',  Y: ' + finalY.toFixed(1));
+                        $finalAngle.removeClass('text-muted').text(finalA.toFixed(1) + '\u00B0');
+                        $finalDist.removeClass('text-muted').text(dist.toFixed(1));
+                    } else {
+                        $qrBadge.removeClass('bg-success').addClass('bg-secondary').text('감지 안됨');
+                        $qrText.addClass('text-muted').text('-');
+                        $qrCenter.addClass('text-muted').text('-');
+                        $qrAngle.addClass('text-muted').text('-');
+                        $frameCenter.addClass('text-muted').text('-');
+                        $qrDelta.addClass('text-muted').text('-');
+                        $qrTime.addClass('text-muted').text('-');
+                        $finalCoord.addClass('text-muted').text('-');
+                        $finalAngle.addClass('text-muted').text('-');
+                        $finalDist.addClass('text-muted').text('-');
+                    }
+                });
+            }
+
+            setInterval(checkQrStatus, 500);
         });
     </script>
 }

@@ -76,6 +76,7 @@ public class MainSequenceService : BackgroundService
                     _logger.LogInformation("Cobot Modbus TCP 재연결 완료");
                 }
 
+                // AMR 상태 읽기 및 MQTT 발행
                 if (_amrService.IsConnected && _mqttService.IsConnected)
                 {
                     var robotStatus = await _amrService.ReadStatusAsync(stoppingToken);
@@ -94,7 +95,28 @@ public class MainSequenceService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "메인 루프 실패");
+                _logger.LogWarning(ex, "AMR 메인 루프 실패");
+            }
+
+            // Cobot 상태 읽기 (AMR와 독립적으로 처리)
+            try
+            {
+                if (_cobotService.IsConnected)
+                {
+                    var cobotStatus = await _cobotService.ReadStatusAsync(stoppingToken);
+                    _logger.LogInformation(
+                        "Cobot 상태: Enable={Enable}, Mode={Mode}, Status={Status}, Fault={Fault}, SubFault={SubFault}",
+                        cobotStatus.EnableState, cobotStatus.RobotMode, cobotStatus.OperationStatus,
+                        cobotStatus.MasterFaultCode, cobotStatus.SubFaultCode);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Cobot 상태 읽기 실패");
             }
 
             await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken);

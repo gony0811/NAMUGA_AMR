@@ -1,3 +1,4 @@
+using AMR.Models;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenCvSharp;
@@ -27,7 +28,11 @@ public class CameraService : BackgroundService
     private byte[] _currentDepthFrame = Array.Empty<byte>();
     private readonly object _rgbLock = new();
     private readonly object _depthLock = new();
+    private readonly object _qrLock = new();
     private volatile bool _isConnected;
+
+    private readonly QRCodeDetector _qrDetector = new();
+    private QrDetectionResult _lastQrResult = new();
 
     public bool IsConnected => _isConnected;
 
@@ -50,6 +55,14 @@ public class CameraService : BackgroundService
         lock (_depthLock)
         {
             return _currentDepthFrame;
+        }
+    }
+
+    public QrDetectionResult GetQrDetectionResult()
+    {
+        lock (_qrLock)
+        {
+            return _lastQrResult;
         }
     }
 
@@ -160,6 +173,7 @@ public class CameraService : BackgroundService
 
             if (hasRgb)
             {
+                DetectAndDrawQrCode(rgbFrame);
                 var rgbBuf = EncodeToJpeg(rgbFrame);
                 lock (_rgbLock)
                 {
@@ -177,6 +191,97 @@ public class CameraService : BackgroundService
             }
 
             await Task.Delay(delayMs, stoppingToken);
+        }
+    }
+
+    private void DetectAndDrawQrCode(Mat rgbFrame)
+    {
+        try
+        {
+            var decoded = _qrDetector.DetectAndDecode(rgbFrame, out var points);
+
+            if (!string.IsNullOrEmpty(decoded) && points.Length >= 4)
+            {
+                // 중심 좌표 계산 (4개 꼭짓점 평균)
+                var centerX = (points[0].X + points[1].X + points[2].X + points[3].X) / 4.0;
+                var centerY = (points[0].Y + points[1].Y + points[2].Y + points[3].Y) / 4.0;
+
+                // 회전 각도 계산 (상단 변: points[0]→points[1] 기준)
+                var dx = points[1].X - points[0].X;
+                var dy = points[1].Y - points[0].Y;
+                var angle = Math.Atan2(dy, dx) * 180.0 / Math.PI;
+
+                // 카메라 프레임 중심
+                var frameCenterX = rgbFrame.Width / 2.0;
+                var frameCenterY = rgbFrame.Height / 2.0;
+
+                // 카메라 센터 → QR 센터 델타 (픽셀)
+                var deltaX = centerX - frameCenterX;
+                var deltaY = centerY - frameCenterY;
+
+                // QR 결과 저장
+                lock (_qrLock)
+                {
+                    _lastQrResult = new QrDetectionResult
+                    {
+                        Detected = true,
+                        DecodedText = decoded,
+                        CenterX = Math.Round(centerX, 1),
+                        CenterY = Math.Round(centerY, 1),
+                        RotationAngle = Math.Round(angle, 1),
+                        FrameCenterX = Math.Round(frameCenterX, 1),
+                        FrameCenterY = Math.Round(frameCenterY, 1),
+                        DeltaX = Math.Round(deltaX, 1),
+                        DeltaY = Math.Round(deltaY, 1),
+                        DetectedAt = DateTime.Now
+                    };
+                }
+
+                // QR코드 경계 그리기 (초록색)
+                var pts = points.Select(p => new Point((int)p.X, (int)p.Y)).ToArray();
+                Cv2.Polylines(rgbFrame, new[] { pts }, true, new Scalar(0, 255, 0), 2);
+
+                // 중심점 마커 (빨간색 십자)
+                var center = new Point((int)centerX, (int)centerY);
+                Cv2.DrawMarker(rgbFrame, center, new Scalar(0, 0, 255),
+                    MarkerTypes.Cross, 20, 2);
+
+                // 카메라 중심점 마커 (파란색 십자)
+                var frameCenter = new Point((int)frameCenterX, (int)frameCenterY);
+                Cv2.DrawMarker(rgbFrame, frameCenter, new Scalar(255, 0, 0),
+                    MarkerTypes.Cross, 15, 1);
+
+                // 카메라 중심 → QR 중심 연결선 (노란색 점선)
+                Cv2.Line(rgbFrame, frameCenter, center, new Scalar(0, 255, 255), 1, LineTypes.Link4);
+
+                // 텍스트 오버레이
+                var label = $"QR: {decoded}";
+                var coordLabel = $"Center: ({centerX:F1}, {centerY:F1})  Angle: {angle:F1} deg";
+                var deltaLabel = $"Delta: ({deltaX:F1}, {deltaY:F1})";
+
+                Cv2.Rectangle(rgbFrame, new Point(5, 5), new Point(560, 85),
+                    new Scalar(0, 0, 0), -1);
+                Cv2.PutText(rgbFrame, label, new Point(10, 25),
+                    HersheyFonts.HersheySimplex, 0.7, new Scalar(0, 255, 0), 2);
+                Cv2.PutText(rgbFrame, coordLabel, new Point(10, 50),
+                    HersheyFonts.HersheySimplex, 0.6, new Scalar(0, 255, 255), 2);
+                Cv2.PutText(rgbFrame, deltaLabel, new Point(10, 75),
+                    HersheyFonts.HersheySimplex, 0.6, new Scalar(255, 200, 0), 2);
+            }
+            else
+            {
+                lock (_qrLock)
+                {
+                    if (_lastQrResult.Detected)
+                    {
+                        _lastQrResult = new QrDetectionResult();
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "QR코드 감지 중 오류");
         }
     }
 

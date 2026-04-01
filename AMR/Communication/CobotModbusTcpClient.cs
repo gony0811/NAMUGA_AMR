@@ -1,5 +1,6 @@
 using System.Net.Sockets;
 using AMR.Models;
+using Microsoft.Extensions.Logging;
 using NModbus;
 
 namespace AMR.Communication;
@@ -10,15 +11,17 @@ namespace AMR.Communication;
 public class CobotModbusTcpClient : IDisposable
 {
     private readonly CobotModbusTcpSettings _settings;
+    private readonly ILogger<CobotModbusTcpClient> _logger;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
 
     private TcpClient? _tcpClient;
     private IModbusMaster? _master;
     private bool _disposed;
 
-    public CobotModbusTcpClient(CobotModbusTcpSettings settings)
+    public CobotModbusTcpClient(CobotModbusTcpSettings settings, ILogger<CobotModbusTcpClient> logger)
     {
         _settings = settings;
+        _logger = logger;
     }
 
     /// <summary>연결 상태</summary>
@@ -161,7 +164,15 @@ public class CobotModbusTcpClient : IDisposable
         await _semaphore.WaitAsync(ct);
         try
         {
-            return await _master!.ReadHoldingRegistersAsync(_settings.SlaveId, startAddress, count);
+            _logger.LogDebug("Cobot ReadHoldingRegisters: address={Address}, count={Count}", startAddress, count);
+            var result = await _master!.ReadHoldingRegistersAsync(_settings.SlaveId, startAddress, count);
+            _logger.LogDebug("Cobot ReadHoldingRegisters 성공: [{Values}]", string.Join(", ", result));
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Cobot ReadHoldingRegisters 실패: address={Address}, count={Count}", startAddress, count);
+            throw;
         }
         finally
         {
@@ -179,7 +190,15 @@ public class CobotModbusTcpClient : IDisposable
         await _semaphore.WaitAsync(ct);
         try
         {
-            return await _master!.ReadCoilsAsync(_settings.SlaveId, startAddress, count);
+            _logger.LogDebug("Cobot ReadCoils: address={Address}, count={Count}", startAddress, count);
+            var result = await _master!.ReadCoilsAsync(_settings.SlaveId, startAddress, count);
+            _logger.LogDebug("Cobot ReadCoils 성공: {Count}개 읽음", result.Length);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Cobot ReadCoils 실패: address={Address}, count={Count}", startAddress, count);
+            throw;
         }
         finally
         {
@@ -193,7 +212,14 @@ public class CobotModbusTcpClient : IDisposable
         await _semaphore.WaitAsync(ct);
         try
         {
+            _logger.LogDebug("Cobot WriteCoil: address={Address}, value={Value}", address, value);
             await _master!.WriteSingleCoilAsync(_settings.SlaveId, address, value);
+            _logger.LogDebug("Cobot WriteCoil 성공: address={Address}", address);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Cobot WriteCoil 실패: address={Address}, value={Value}", address, value);
+            throw;
         }
         finally
         {
@@ -207,7 +233,15 @@ public class CobotModbusTcpClient : IDisposable
         await _semaphore.WaitAsync(ct);
         try
         {
-            return await _master!.ReadInputsAsync(_settings.SlaveId, startAddress, count);
+            _logger.LogDebug("Cobot ReadDiscreteInputs: address={Address}, count={Count}", startAddress, count);
+            var result = await _master!.ReadInputsAsync(_settings.SlaveId, startAddress, count);
+            _logger.LogDebug("Cobot ReadDiscreteInputs 성공: {Count}개 읽음", result.Length);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Cobot ReadDiscreteInputs 실패: address={Address}, count={Count}", startAddress, count);
+            throw;
         }
         finally
         {
@@ -221,7 +255,15 @@ public class CobotModbusTcpClient : IDisposable
         await _semaphore.WaitAsync(ct);
         try
         {
-            return await _master!.ReadInputRegistersAsync(_settings.SlaveId, startAddress, count);
+            _logger.LogDebug("Cobot ReadInputRegisters: address={Address}, count={Count}", startAddress, count);
+            var result = await _master!.ReadInputRegistersAsync(_settings.SlaveId, startAddress, count);
+            _logger.LogDebug("Cobot ReadInputRegisters 성공: [{Values}]", string.Join(", ", result));
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Cobot ReadInputRegisters 실패: address={Address}, count={Count}", startAddress, count);
+            throw;
         }
         finally
         {
@@ -235,7 +277,14 @@ public class CobotModbusTcpClient : IDisposable
         await _semaphore.WaitAsync(ct);
         try
         {
+            _logger.LogDebug("Cobot WriteRegister: address={Address}, value={Value}", address, value);
             await _master!.WriteSingleRegisterAsync(_settings.SlaveId, address, value);
+            _logger.LogDebug("Cobot WriteRegister 성공: address={Address}", address);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Cobot WriteRegister 실패: address={Address}, value={Value}", address, value);
+            throw;
         }
         finally
         {

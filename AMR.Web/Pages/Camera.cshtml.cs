@@ -24,6 +24,24 @@ public class CameraModel : PageModel
         return new JsonResult(new { connected = _cameraService.IsConnected });
     }
 
+    public IActionResult OnGetQrStatus()
+    {
+        var result = _cameraService.GetQrDetectionResult();
+        return new JsonResult(new
+        {
+            result.Detected,
+            result.DecodedText,
+            result.CenterX,
+            result.CenterY,
+            result.RotationAngle,
+            result.FrameCenterX,
+            result.FrameCenterY,
+            result.DeltaX,
+            result.DeltaY,
+            DetectedAt = result.Detected ? result.DetectedAt.ToString("HH:mm:ss.fff") : ""
+        });
+    }
+
     public async Task OnGetRgbStream()
     {
         await StreamFrames(() => _cameraService.GetCurrentRgbFrame());

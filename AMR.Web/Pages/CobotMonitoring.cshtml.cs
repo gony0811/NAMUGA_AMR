@@ -1,6 +1,7 @@
 using AMR.Communication;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.Extensions.Logging;
 
 namespace AMR.Web.Pages;
 
@@ -11,10 +12,12 @@ public class CobotMonitoringModel : PageModel
     private static readonly object _lock = new();
 
     private readonly CobotModbusTcpSettings _defaultSettings;
+    private readonly ILogger<CobotModbusTcpClient> _clientLogger;
 
-    public CobotMonitoringModel(CobotModbusTcpSettings defaultSettings)
+    public CobotMonitoringModel(CobotModbusTcpSettings defaultSettings, ILogger<CobotModbusTcpClient> clientLogger)
     {
         _defaultSettings = defaultSettings;
+        _clientLogger = clientLogger;
     }
 
     public bool IsConnected => _client?.IsConnected ?? false;
@@ -42,7 +45,7 @@ public class CobotMonitoringModel : PageModel
                     Port = request.Port,
                     SlaveId = request.SlaveId
                 };
-                _client = new CobotModbusTcpClient(settings);
+                _client = new CobotModbusTcpClient(settings, _clientLogger);
             }
 
             await _client!.ConnectAsync();
