@@ -1,0 +1,330 @@
+@page
+@model AMR.Web.Pages.SimulationModel
+@{
+    ViewData["Title"] = "Simulation";
+}
+
+<div class="container-fluid mt-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>Simulation</h2>
+        <span id="mqttStatus" class="badge @(Model.IsConnected ? "bg-success" : "bg-danger")">
+            MQTT: @(Model.IsConnected ? "연결됨" : "미연결")
+        </span>
+    </div>
+    <hr />
+
+    <div class="row">
+        @* ── 섹션 1: AMR 상태 퍼블리시 ── *@
+        <div class="col-lg-4 mb-3">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">AMR 상태 퍼블리시</h5>
+                </div>
+                <div class="card-body">
+                    <small class="text-muted fw-bold">State</small>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label form-label-sm">RunState</label>
+                            <select id="runState" class="form-select form-select-sm">
+                                <option value="Stop">Stop (1)</option>
+                                <option value="Run" selected>Run (2)</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label form-label-sm">FullState</label>
+                            <select id="fullState" class="form-select form-select-sm">
+                                <option value="Empty" selected>Empty (1)</option>
+                                <option value="Full">Full (2)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-2 mt-1">
+                        <div class="col-6">
+                            <label class="form-label form-label-sm">WorkState</label>
+                            <select id="workState" class="form-select form-select-sm">
+                                <option value="Idle" selected>Idle (1)</option>
+                                <option value="Moving">Moving (2)</option>
+                                <option value="Docking">Docking (3)</option>
+                                <option value="Jog">Jog (4)</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label form-label-sm">VehicleDestNode</label>
+                            <input id="vehicleDestNode" type="text" class="form-control form-control-sm" placeholder="ex: N0001" />
+                        </div>
+                    </div>
+
+                    <hr class="my-2" />
+                    <small class="text-muted fw-bold">Pose</small>
+                    <div class="row g-2">
+                        <div class="col-4">
+                            <label class="form-label form-label-sm">X (m)</label>
+                            <input id="poseX" type="number" step="0.01" class="form-control form-control-sm" value="0" />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label form-label-sm">Y (m)</label>
+                            <input id="poseY" type="number" step="0.01" class="form-control form-control-sm" value="0" />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label form-label-sm">Angle (rad)</label>
+                            <input id="poseAngle" type="number" step="0.01" class="form-control form-control-sm" value="0" />
+                        </div>
+                    </div>
+
+                    <hr class="my-2" />
+                    <small class="text-muted fw-bold">Error</small>
+                    <div class="row g-2">
+                        <div class="col-4">
+                            <label class="form-label form-label-sm">Code</label>
+                            <input id="errorCode" type="number" class="form-control form-control-sm" value="0" min="0" />
+                        </div>
+                        <div class="col-8">
+                            <label class="form-label form-label-sm">Message</label>
+                            <input id="errorMessage" type="text" class="form-control form-control-sm" placeholder="에러 메시지 (선택)" />
+                        </div>
+                    </div>
+
+                    <hr class="my-2" />
+                    <small class="text-muted fw-bold">Battery</small>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label form-label-sm">Level (%)</label>
+                            <input id="batteryPercent" type="number" step="0.1" class="form-control form-control-sm" value="100" min="0" max="100" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label form-label-sm">Voltage (V)</label>
+                            <input id="batteryVoltage" type="number" step="0.01" class="form-control form-control-sm" value="0" />
+                        </div>
+                    </div>
+                    <div class="row g-2 mt-1">
+                        <div class="col-4">
+                            <label class="form-label form-label-sm">Current (A)</label>
+                            <input id="batteryCurrent" type="number" step="0.01" class="form-control form-control-sm" value="0" />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label form-label-sm">Temp (C)</label>
+                            <input id="batteryTemp" type="number" step="0.1" class="form-control form-control-sm" value="0" />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label form-label-sm">Charging</label>
+                            <select id="chargingState" class="form-select form-select-sm">
+                                <option value="Charging">Charging</option>
+                                <option value="Discharging" selected>Discharging</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <hr class="my-2" />
+                    <small class="text-muted fw-bold">Abnormal <span class="text-secondary">(선택)</span></small>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label form-label-sm">Type</label>
+                            <input id="abnormalType" type="text" class="form-control form-control-sm" placeholder="ex: CHARGING_FAIL" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label form-label-sm">Node</label>
+                            <input id="abnormalNode" type="text" class="form-control form-control-sm" placeholder="ex: N0001" />
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button id="btnPublishStatus" class="btn btn-primary btn-sm w-100">퍼블리시</button>
+                    <div id="statusResult" class="mt-2" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+
+        @* ── 섹션 2: 수신 명령 로그 ── *@
+        <div class="col-lg-4 mb-3">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">수신 명령 (ACS → AMR)</h5>
+                    <span id="commandCount" class="badge bg-secondary">0</span>
+                </div>
+                <div class="card-body p-0" style="max-height: 500px; overflow-y: auto;">
+                    <table class="table table-sm table-hover table-striped mb-0">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th>시간</th>
+                                <th>CmdId</th>
+                                <th>Command</th>
+                                <th>NodeId</th>
+                                <th>Port</th>
+                                <th>JobType</th>
+                            </tr>
+                        </thead>
+                        <tbody id="commandLog">
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-4">수신된 명령이 없습니다</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        @* ── 섹션 3: Reply 송신 ── *@
+        <div class="col-lg-4 mb-3">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Reply 송신 (AMR → ACS)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label form-label-sm">CmdId</label>
+                        <input id="replyCmdId" type="text" class="form-control form-control-sm" placeholder="명령 로그에서 행을 클릭하면 자동 입력" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label form-label-sm">Status</label>
+                        <select id="replyStatus" class="form-select form-select-sm">
+                            <option value="ACCEPTED">ACCEPTED</option>
+                            <option value="REJECTED">REJECTED</option>
+                            <option value="EXECUTING">EXECUTING</option>
+                            <option value="COMPLETED">COMPLETED</option>
+                            <option value="FAILED">FAILED</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label form-label-sm">ResultCode</label>
+                        <input id="replyResultCode" type="number" class="form-control form-control-sm" value="0" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label form-label-sm">Message</label>
+                        <input id="replyMessage" type="text" class="form-control form-control-sm" placeholder="상세 메시지 (선택)" />
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button id="btnSendReply" class="btn btn-success btn-sm w-100">Reply 송신</button>
+                    <div id="replyResult" class="mt-2" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    const token = $('input[name="__RequestVerificationToken"]').val() ||
+                  document.querySelector('meta[name="RequestVerificationToken"]')?.content || '';
+
+    // ── 상태 퍼블리시 ──
+    $('#btnPublishStatus').click(function () {
+        const btn = $(this);
+        btn.prop('disabled', true);
+
+        $.ajax({
+            url: '/Simulation?handler=PublishStatus',
+            method: 'POST',
+            contentType: 'application/json',
+            headers: { 'RequestVerificationToken': token },
+            data: JSON.stringify({
+                runState: $('#runState').val(),
+                fullState: $('#fullState').val(),
+                workState: $('#workState').val(),
+                vehicleDestNode: $('#vehicleDestNode').val() || '',
+                poseX: parseFloat($('#poseX').val()) || 0,
+                poseY: parseFloat($('#poseY').val()) || 0,
+                poseAngle: parseFloat($('#poseAngle').val()) || 0,
+                errorCode: parseInt($('#errorCode').val()) || 0,
+                errorMessage: $('#errorMessage').val() || '',
+                batteryPercent: parseFloat($('#batteryPercent').val()) || 0,
+                batteryVoltage: parseFloat($('#batteryVoltage').val()) || 0,
+                batteryCurrent: parseFloat($('#batteryCurrent').val()) || 0,
+                batteryTemp: parseFloat($('#batteryTemp').val()) || 0,
+                chargingState: $('#chargingState').val(),
+                abnormalType: $('#abnormalType').val() || null,
+                abnormalNode: $('#abnormalNode').val() || null
+            }),
+            success: function (res) {
+                showResult('#statusResult', res.success, res.success ? '퍼블리시 완료' : res.error);
+            },
+            error: function () {
+                showResult('#statusResult', false, '요청 실패');
+            },
+            complete: function () {
+                btn.prop('disabled', false);
+            }
+        });
+    });
+
+    // ── Reply 송신 ──
+    $('#btnSendReply').click(function () {
+        const cmdId = $('#replyCmdId').val().trim();
+        if (!cmdId) {
+            showResult('#replyResult', false, 'CmdId를 입력하세요');
+            return;
+        }
+
+        const btn = $(this);
+        btn.prop('disabled', true);
+
+        $.ajax({
+            url: '/Simulation?handler=SendReply',
+            method: 'POST',
+            contentType: 'application/json',
+            headers: { 'RequestVerificationToken': token },
+            data: JSON.stringify({
+                cmdId: cmdId,
+                status: $('#replyStatus').val(),
+                resultCode: parseInt($('#replyResultCode').val()) || 0,
+                message: $('#replyMessage').val()
+            }),
+            success: function (res) {
+                showResult('#replyResult', res.success, res.success ? 'Reply 송신 완료' : res.error);
+            },
+            error: function () {
+                showResult('#replyResult', false, '요청 실패');
+            },
+            complete: function () {
+                btn.prop('disabled', false);
+            }
+        });
+    });
+
+    // ── 명령 폴링 ──
+    let commandIndex = 0;
+
+    function pollCommands() {
+        $.getJSON('/Simulation?handler=Commands&sinceIndex=' + commandIndex, function (res) {
+            if (res.commands && res.commands.length > 0) {
+                if (commandIndex === 0) {
+                    $('#commandLog').empty();
+                }
+                res.commands.forEach(function (cmd) {
+                    const row = $('<tr style="cursor:pointer">')
+                        .append($('<td>').text(cmd.receivedAt))
+                        .append($('<td>').text(cmd.cmdId))
+                        .append($('<td>').text(cmd.command))
+                        .append($('<td>').text(cmd.nodeId))
+                        .append($('<td>').text(cmd.port))
+                        .append($('<td>').text(cmd.jobType));
+
+                    row.click(function () {
+                        $('#replyCmdId').val(cmd.cmdId);
+                        $('#commandLog tr').removeClass('table-active');
+                        $(this).addClass('table-active');
+                    });
+
+                    $('#commandLog').append(row);
+                });
+                commandIndex = res.totalCount;
+                $('#commandCount').text(res.totalCount);
+            }
+        });
+    }
+
+    setInterval(pollCommands, 2000);
+    pollCommands();
+
+    // ── 유틸 ──
+    function showResult(selector, success, message) {
+        $(selector)
+            .removeClass('alert-success alert-danger')
+            .addClass('alert alert-sm py-1 px-2 ' + (success ? 'alert-success' : 'alert-danger'))
+            .text(message)
+            .show();
+
+        setTimeout(function () { $(selector).fadeOut(); }, 3000);
+    }
+</script>
+}

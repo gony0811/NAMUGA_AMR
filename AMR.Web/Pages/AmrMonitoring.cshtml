@@ -1,0 +1,507 @@
+@page
+@model AMR.Web.Pages.AmrMonitoringModel
+@{
+    ViewData["Title"] = "AMR Monitoring";
+}
+
+<div class="container-fluid mt-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>AMR Monitoring</h2>
+        <span id="connBadge" class="badge @(Model.IsConnected ? "bg-success" : "bg-danger")">
+            Modbus: @(Model.IsConnected ? "연결됨" : "미연결")
+        </span>
+    </div>
+
+    @* ── 연결 제어 바 ── *@
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <div class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label form-label-sm mb-0">IP Address</label>
+                    <input id="ipAddress" type="text" class="form-control form-control-sm" value="@Model.DefaultIp" style="width:160px" />
+                </div>
+                <div class="col-auto">
+                    <label class="form-label form-label-sm mb-0">Port</label>
+                    <input id="port" type="number" class="form-control form-control-sm" value="@Model.DefaultPort" style="width:80px" />
+                </div>
+                <div class="col-auto">
+                    <label class="form-label form-label-sm mb-0">Slave ID</label>
+                    <input id="slaveId" type="number" class="form-control form-control-sm" value="@Model.DefaultSlaveId" min="0" max="255" style="width:70px" />
+                </div>
+                <div class="col-auto">
+                    <button id="btnConnect" class="btn btn-primary btn-sm">연결</button>
+                    <button id="btnDisconnect" class="btn btn-outline-secondary btn-sm">해제</button>
+                </div>
+                <div class="col-auto">
+                    <div id="connResult" style="display:none;" class="small"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <hr />
+
+    <div class="row">
+        @* ══════════════ 왼쪽: 상태 읽기 (Input Register) ══════════════ *@
+        <div class="col-lg-6 mb-3">
+            <h5 class="mb-3">상태 읽기 (Input Register)</h5>
+
+            @* 기본 상태 *@
+            <div class="card mb-3">
+                <div class="card-header py-2"><strong>기본 상태</strong></div>
+                <div class="card-body py-2">
+                    <table class="table table-sm table-borderless mb-0">
+                        <tbody>
+                            <tr><td class="text-muted" style="width:40%">Power State</td><td id="val-powerState">-</td></tr>
+                            <tr><td class="text-muted">Robot State</td><td id="val-robotState">-</td></tr>
+                            <tr><td class="text-muted">Error Code</td><td id="val-errorCode">-</td></tr>
+                            <tr><td class="text-muted">Robot Stop</td><td id="val-robotStopActive">-</td></tr>
+                            <tr><td class="text-muted">WiFi</td><td id="val-wifi">-</td></tr>
+                            <tr><td class="text-muted">Work Status</td><td id="val-workStatus">-</td></tr>
+                            <tr><td class="text-muted">Driving Mode</td><td id="val-drivingMode">-</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            @* 위치 (Pose) *@
+            <div class="card mb-3">
+                <div class="card-header py-2"><strong>위치 (Pose)</strong></div>
+                <div class="card-body py-2">
+                    <table class="table table-sm table-borderless mb-0">
+                        <tbody>
+                            <tr><td class="text-muted" style="width:40%">X (m)</td><td id="val-poseX">-</td></tr>
+                            <tr><td class="text-muted">Y (m)</td><td id="val-poseY">-</td></tr>
+                            <tr><td class="text-muted">Angle (rad)</td><td id="val-poseAngle">-</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            @* 배터리 *@
+            <div class="card mb-3">
+                <div class="card-header py-2"><strong>배터리</strong></div>
+                <div class="card-body py-2">
+                    <table class="table table-sm table-borderless mb-0">
+                        <tbody>
+                            <tr><td class="text-muted" style="width:40%">Level</td><td id="val-batteryLevel">-</td></tr>
+                            <tr><td class="text-muted">Voltage (V)</td><td id="val-batteryVoltage">-</td></tr>
+                            <tr><td class="text-muted">Current (A)</td><td id="val-batteryCurrent">-</td></tr>
+                            <tr><td class="text-muted">Temp (&deg;C)</td><td id="val-batteryTemp">-</td></tr>
+                            <tr><td class="text-muted">Charging</td><td id="val-chargingState">-</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            @* Raw 레지스터 진단 *@
+            <div class="card mb-3 border-info">
+                <div class="card-header py-2 bg-info text-white d-flex justify-content-between align-items-center">
+                    <strong>Raw 진단</strong>
+                    <div>
+                        <button id="btnRawStatus" class="btn btn-light btn-sm py-0">Input (0-15)</button>
+                        <button id="btnRawPose" class="btn btn-light btn-sm py-0">Pose (19-24)</button>
+                        <button id="btnRawHolding" class="btn btn-light btn-sm py-0">Holding (0-32)</button>
+                    </div>
+                </div>
+                <div class="card-body py-2">
+                    <pre id="rawResult" class="mb-0 small" style="max-height:300px; overflow-y:auto;">버튼을 눌러 Raw 레지스터 값을 확인하세요</pre>
+                </div>
+            </div>
+
+            @* 맵 & Task 진행 *@
+            <div class="card mb-3">
+                <div class="card-header py-2"><strong>맵 / Task 진행</strong></div>
+                <div class="card-body py-2">
+                    <table class="table table-sm table-borderless mb-0">
+                        <tbody>
+                            <tr><td class="text-muted" style="width:40%">Map Status (%)</td><td id="val-mapStatusPercent">-</td></tr>
+                            <tr><td class="text-muted">Total Task</td><td id="val-totalTaskCount">-</td></tr>
+                            <tr><td class="text-muted">Current Task</td><td id="val-currentTaskNumber">-</td></tr>
+                            <tr><td class="text-muted">Total Job</td><td id="val-totalJobCount">-</td></tr>
+                            <tr><td class="text-muted">Current Job</td><td id="val-currentJobNumber">-</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        @* ══════════════ 오른쪽: 제어 쓰기 (Holding Register) ══════════════ *@
+        <div class="col-lg-6 mb-3">
+            <h5 class="mb-3">제어 쓰기 (Holding Register)</h5>
+
+            @* 전원 제어 *@
+            <div class="card mb-3">
+                <div class="card-header py-2"><strong>전원 제어</strong></div>
+                <div class="card-body py-2">
+                    <div class="input-group input-group-sm">
+                        <select id="writePower" class="form-select form-select-sm">
+                            <option value="0">None (0)</option>
+                            <option value="1">PowerOff (1)</option>
+                            <option value="2">Restart (2)</option>
+                            <option value="3">QuickRestart (3)</option>
+                        </select>
+                        <button class="btn btn-warning btn-sm" onclick="writeCommand('Power', $('#writePower').val())">쓰기</button>
+                    </div>
+                </div>
+            </div>
+
+            @* 주행 모드 *@
+            <div class="card mb-3">
+                <div class="card-header py-2"><strong>주행 모드</strong></div>
+                <div class="card-body py-2">
+                    <div class="input-group input-group-sm">
+                        <select id="writeDrivingMode" class="form-select form-select-sm">
+                            <option value="1">Drive (1)</option>
+                            <option value="2">Cart (2)</option>
+                        </select>
+                        <button class="btn btn-warning btn-sm" onclick="writeCommand('DrivingMode', $('#writeDrivingMode').val())">쓰기</button>
+                    </div>
+                </div>
+            </div>
+
+            @* 상태 제어 (ExecutionControl) *@
+            <div class="card mb-3">
+                <div class="card-header py-2"><strong>상태 제어 (Execution)</strong></div>
+                <div class="card-body py-2">
+                    <div class="input-group input-group-sm">
+                        <select id="writeExecution" class="form-select form-select-sm">
+                            <option value="1">Stop (1)</option>
+                            <option value="2">Start (2)</option>
+                            <option value="3">Pause (3)</option>
+                        </select>
+                        <button class="btn btn-warning btn-sm" onclick="writeCommand('ExecutionControl', $('#writeExecution').val())">쓰기</button>
+                    </div>
+                </div>
+            </div>
+
+            @* 로봇 정지 *@
+            <div class="card mb-3">
+                <div class="card-header py-2"><strong>로봇 주행 정지</strong></div>
+                <div class="card-body py-2">
+                    <div class="input-group input-group-sm">
+                        <select id="writeRobotStop" class="form-select form-select-sm">
+                            <option value="1">활성화 (1)</option>
+                            <option value="2">비활성화 (2)</option>
+                        </select>
+                        <button class="btn btn-warning btn-sm" onclick="writeCommand('RobotStop', $('#writeRobotStop').val())">쓰기</button>
+                    </div>
+                </div>
+            </div>
+
+            @* Error Reset *@
+            <div class="card mb-3">
+                <div class="card-header py-2"><strong>Error Reset</strong></div>
+                <div class="card-body py-2">
+                    <button class="btn btn-warning btn-sm" onclick="writeCommand('AirInitialize', 1)">Error Reset</button>
+                </div>
+            </div>
+
+            @* Task / Job Index *@
+            <div class="card mb-3">
+                <div class="card-header py-2"><strong>Task / Job 제어</strong></div>
+                <div class="card-body py-2">
+                    <div class="row g-2 align-items-end">
+                        <div class="col">
+                            <label class="form-label form-label-sm mb-0">Task Index</label>
+                            <input id="writeTaskIndex" type="number" class="form-control form-control-sm" value="0" min="0" />
+                        </div>
+                        <div class="col">
+                            <label class="form-label form-label-sm mb-0">Job Index</label>
+                            <input id="writeJobIndex" type="number" class="form-control form-control-sm" value="0" min="0" />
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-warning btn-sm" onclick="writeTaskJob()">쓰기</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* 포즈 탐색 *@
+            <div class="card mb-3">
+                <div class="card-header py-2"><strong>포즈 탐색</strong></div>
+                <div class="card-body py-2">
+                    <div class="mb-2">
+                        <button class="btn btn-info btn-sm" onclick="writeCommand('PoseSearch', 1)">포즈 탐색 활성화</button>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-4">
+                            <label class="form-label form-label-sm mb-0">X (m)</label>
+                            <input id="writePoseX" type="number" step="0.001" class="form-control form-control-sm" value="0" />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label form-label-sm mb-0">Y (m)</label>
+                            <input id="writePoseY" type="number" step="0.001" class="form-control form-control-sm" value="0" />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label form-label-sm mb-0">Angle (rad)</label>
+                            <input id="writePoseAngle" type="number" step="0.001" class="form-control form-control-sm" value="0" />
+                        </div>
+                    </div>
+                    <button class="btn btn-warning btn-sm mt-2" onclick="writePoseTarget()">포즈 좌표 쓰기</button>
+                </div>
+            </div>
+
+            @* 쓰기 결과 로그 *@
+            <div class="card">
+                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                    <strong>쓰기 로그</strong>
+                    <button class="btn btn-outline-secondary btn-sm py-0" onclick="$('#writeLog').empty()">지우기</button>
+                </div>
+                <div class="card-body p-0" style="max-height:200px; overflow-y:auto;">
+                    <table class="table table-sm table-striped mb-0">
+                        <thead class="table-light sticky-top">
+                            <tr><th>시간</th><th>명령</th><th>결과</th></tr>
+                        </thead>
+                        <tbody id="writeLog"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    let pollTimer = null;
+
+    // ── 연결 ──
+    $('#btnConnect').click(function () {
+        const btn = $(this);
+        btn.prop('disabled', true);
+
+        $.ajax({
+            url: '/AmrMonitoring?handler=Connect',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                ipAddress: $('#ipAddress').val(),
+                port: parseInt($('#port').val()) || 502,
+                slaveId: parseInt($('#slaveId').val()) || 1
+            }),
+            success: function (res) {
+                if (res.success) {
+                    showConnResult(true, '연결 성공');
+                    updateBadge(true);
+                    startPolling();
+                } else {
+                    showConnResult(false, res.error);
+                    updateBadge(false);
+                }
+            },
+            error: function () {
+                showConnResult(false, '요청 실패');
+            },
+            complete: function () {
+                btn.prop('disabled', false);
+            }
+        });
+    });
+
+    // ── 해제 ──
+    $('#btnDisconnect').click(function () {
+        $.ajax({
+            url: '/AmrMonitoring?handler=Disconnect',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({}),
+            success: function (res) {
+                showConnResult(true, '연결 해제됨');
+                updateBadge(false);
+                stopPolling();
+                clearStatus();
+            }
+        });
+    });
+
+    // ── 상태 폴링 ──
+    function startPolling() {
+        stopPolling();
+        pollStatus();
+        pollTimer = setInterval(pollStatus, 2000);
+    }
+
+    function stopPolling() {
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+    }
+
+    function pollStatus() {
+        $.getJSON('/AmrMonitoring?handler=Status', function (res) {
+            if (res.success && res.data) {
+                const d = res.data;
+                $('#val-powerState').text(d.powerState);
+                $('#val-robotState').text(d.robotState);
+                $('#val-errorCode').text(d.errorCode);
+                $('#val-robotStopActive').text(d.robotStopActive === 1 ? '활성화' : d.robotStopActive === 0 ? '-' : '비활성화');
+                $('#val-wifi').text(d.wifi);
+                $('#val-workStatus').text(d.workStatus);
+                $('#val-drivingMode').text(d.drivingMode);
+                $('#val-poseX').text(d.poseX);
+                $('#val-poseY').text(d.poseY);
+                $('#val-poseAngle').text(d.poseAngle);
+                $('#val-batteryLevel').text(d.batteryLevel + ' %');
+                $('#val-batteryVoltage').text(d.batteryVoltage);
+                $('#val-batteryCurrent').text(d.batteryCurrent);
+                $('#val-batteryTemp').text(d.batteryTemp);
+                $('#val-chargingState').text(d.chargingState);
+                $('#val-mapStatusPercent').text(d.mapStatusPercent);
+                $('#val-totalTaskCount').text(d.totalTaskCount);
+                $('#val-currentTaskNumber').text(d.currentTaskNumber);
+                $('#val-totalJobCount').text(d.totalJobCount);
+                $('#val-currentJobNumber').text(d.currentJobNumber);
+            } else {
+                updateBadge(false);
+                stopPolling();
+                clearStatus();
+            }
+        }).fail(function () {
+            updateBadge(false);
+            stopPolling();
+        });
+    }
+
+    function clearStatus() {
+        $('[id^="val-"]').text('-');
+    }
+
+    // ── 쓰기 ──
+    function writeCommand(command, value) {
+        $.ajax({
+            url: '/AmrMonitoring?handler=Write',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ command: command, value: parseInt(value) || 0 }),
+            success: function (res) {
+                addWriteLog(command, value, res.success, res.error);
+            },
+            error: function () {
+                addWriteLog(command, value, false, '요청 실패');
+            }
+        });
+    }
+
+    function writeTaskJob() {
+        $.ajax({
+            url: '/AmrMonitoring?handler=Write',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ command: 'TaskJob', value: 0,
+                taskIndex: parseInt($('#writeTaskIndex').val()) || 0,
+                jobIndex: parseInt($('#writeJobIndex').val()) || 0
+            }),
+            success: function (res) {
+                addWriteLog('TaskJob', `Task=${$('#writeTaskIndex').val()}, Job=${$('#writeJobIndex').val()}`, res.success, res.error);
+            },
+            error: function () {
+                addWriteLog('TaskJob', '-', false, '요청 실패');
+            }
+        });
+    }
+
+    function writePoseTarget() {
+        $.ajax({
+            url: '/AmrMonitoring?handler=Write',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                command: 'PoseTarget',
+                value: 0,
+                poseX: parseFloat($('#writePoseX').val()) || 0,
+                poseY: parseFloat($('#writePoseY').val()) || 0,
+                poseAngle: parseFloat($('#writePoseAngle').val()) || 0
+            }),
+            success: function (res) {
+                addWriteLog('PoseTarget', `X=${$('#writePoseX').val()}, Y=${$('#writePoseY').val()}, A=${$('#writePoseAngle').val()}`, res.success, res.error);
+            },
+            error: function () {
+                addWriteLog('PoseTarget', '-', false, '요청 실패');
+            }
+        });
+    }
+
+    function addWriteLog(command, value, success, error) {
+        const now = new Date().toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const badge = success
+            ? '<span class="badge bg-success">OK</span>'
+            : '<span class="badge bg-danger">' + (error || 'FAIL') + '</span>';
+        $('#writeLog').prepend(`<tr><td>${now}</td><td>${command} = ${value}</td><td>${badge}</td></tr>`);
+    }
+
+    // ── UI 헬퍼 ──
+    function updateBadge(connected) {
+        $('#connBadge')
+            .removeClass('bg-success bg-danger')
+            .addClass(connected ? 'bg-success' : 'bg-danger')
+            .text('Modbus: ' + (connected ? '연결됨' : '미연결'));
+    }
+
+    function showConnResult(success, msg) {
+        $('#connResult')
+            .removeClass('text-success text-danger')
+            .addClass(success ? 'text-success' : 'text-danger')
+            .text(msg).show();
+        setTimeout(function () { $('#connResult').fadeOut(); }, 3000);
+    }
+
+    // ── Raw 진단 ──
+    $('#btnRawStatus').click(function () {
+        $.getJSON('/AmrMonitoring?handler=RawStatus', function (res) {
+            if (res.success) {
+                let txt = '[Input Registers 0-15]\n';
+                txt += 'Addr  Value   Hex\n';
+                txt += '────  ──────  ──────\n';
+                res.registers.forEach(function (r) {
+                    txt += `  ${String(r.address).padStart(2)}    ${String(r.value).padStart(5)}   ${r.hex}\n`;
+                });
+                $('#rawResult').text(txt);
+            } else {
+                $('#rawResult').text('Error: ' + res.error);
+            }
+        });
+    });
+
+    $('#btnRawHolding').click(function () {
+        $.getJSON('/AmrMonitoring?handler=RawHolding', function (res) {
+            if (res.success) {
+                let txt = '[Holding Registers 0-32]\n';
+                txt += 'Addr  Value   Hex\n';
+                txt += '────  ──────  ──────\n';
+                res.registers.forEach(function (r) {
+                    txt += `  ${String(r.address).padStart(2)}    ${String(r.value).padStart(5)}   ${r.hex}\n`;
+                });
+                $('#rawResult').text(txt);
+            } else {
+                $('#rawResult').text('Error: ' + res.error);
+            }
+        });
+    });
+
+    $('#btnRawPose').click(function () {
+        $.getJSON('/AmrMonitoring?handler=RawPose', function (res) {
+            if (res.success) {
+                let txt = '';
+                ['poseX', 'poseY', 'poseAngle'].forEach(function (name) {
+                    const d = res[name];
+                    txt += `[${name}]\n`;
+                    txt += `  Raw: R0=${d.raw_r0} (0x${d.raw_r0.toString(16).padStart(4,'0')}), R1=${d.raw_r1} (0x${d.raw_r1.toString(16).padStart(4,'0')})\n`;
+                    txt += `  AB_CD (Big-Endian word):    ${d.aB_CD}\n`;
+                    txt += `  CD_AB (Little-Endian word): ${d.cD_AB}\n\n`;
+                });
+                $('#rawResult').text(txt);
+            } else {
+                $('#rawResult').text('Error: ' + res.error);
+            }
+        });
+    });
+
+    // 페이지 로드 시 이미 연결된 상태면 폴링 시작
+    $(function () {
+        if ('@Model.IsConnected' === 'True') {
+            startPolling();
+        }
+    });
+</script>
+}

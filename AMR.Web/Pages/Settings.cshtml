@@ -1,0 +1,139 @@
+@page
+@model AMR.Web.Pages.SettingsModel
+@{
+    ViewData["Title"] = "설정";
+}
+
+<div class="container mt-4">
+    <h2>설정</h2>
+    <hr />
+
+    @if (!string.IsNullOrEmpty(Model.StatusMessage))
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            @Model.StatusMessage
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <form method="post">
+        <h4 class="mt-4 mb-3">Modbus TCP 연결</h4>
+        <div class="row">
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">연결 정보</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label asp-for="ModbusSettings.IpAddress" class="form-label"></label>
+                            <input asp-for="ModbusSettings.IpAddress" class="form-control" placeholder="예: 192.168.100.133" />
+                            <span asp-validation-for="ModbusSettings.IpAddress" class="text-danger"></span>
+                        </div>
+
+                        <div class="mb-3">
+                            <label asp-for="ModbusSettings.Port" class="form-label"></label>
+                            <input asp-for="ModbusSettings.Port" class="form-control" type="number" />
+                            <span asp-validation-for="ModbusSettings.Port" class="text-danger"></span>
+                        </div>
+
+                        <div class="mb-3">
+                            <label asp-for="ModbusSettings.SlaveId" class="form-label"></label>
+                            <input asp-for="ModbusSettings.SlaveId" class="form-control" type="number" />
+                            <span asp-validation-for="ModbusSettings.SlaveId" class="text-danger"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <h4 class="mt-4 mb-3">Cobot Modbus TCP 연결</h4>
+        <div class="row">
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Cobot 연결 정보</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label asp-for="CobotModbusSettings.IpAddress" class="form-label"></label>
+                            <input asp-for="CobotModbusSettings.IpAddress" class="form-control" placeholder="예: 192.168.100.200" />
+                            <span asp-validation-for="CobotModbusSettings.IpAddress" class="text-danger"></span>
+                        </div>
+
+                        <div class="mb-3">
+                            <label asp-for="CobotModbusSettings.Port" class="form-label"></label>
+                            <input asp-for="CobotModbusSettings.Port" class="form-control" type="number" />
+                            <span asp-validation-for="CobotModbusSettings.Port" class="text-danger"></span>
+                        </div>
+
+                        <div class="mb-3">
+                            <label asp-for="CobotModbusSettings.SlaveId" class="form-label"></label>
+                            <input asp-for="CobotModbusSettings.SlaveId" class="form-control" type="number" />
+                            <span asp-validation-for="CobotModbusSettings.SlaveId" class="text-danger"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <h4 class="mt-4 mb-3">MQTT 연결</h4>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">브로커 연결 정보</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label asp-for="MqttSettings.BrokerAddress" class="form-label"></label>
+                            <input asp-for="MqttSettings.BrokerAddress" class="form-control" placeholder="예: 192.168.1.100" />
+                            <span asp-validation-for="MqttSettings.BrokerAddress" class="text-danger"></span>
+                        </div>
+
+                        <div class="mb-3">
+                            <label asp-for="MqttSettings.BrokerPort" class="form-label"></label>
+                            <input asp-for="MqttSettings.BrokerPort" class="form-control" type="number" />
+                            <span asp-validation-for="MqttSettings.BrokerPort" class="text-danger"></span>
+                        </div>
+
+                        <div class="mb-3">
+                            <label asp-for="MqttSettings.ClientId" class="form-label"></label>
+                            <input asp-for="MqttSettings.ClientId" class="form-control" />
+                            <span asp-validation-for="MqttSettings.ClientId" class="text-danger"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">인증 정보 (선택)</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label asp-for="MqttSettings.Username" class="form-label"></label>
+                            <input asp-for="MqttSettings.Username" class="form-control" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label asp-for="MqttSettings.Password" class="form-label"></label>
+                            <input asp-for="MqttSettings.Password" class="form-control" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-3">
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-save"></i> 저장
+            </button>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

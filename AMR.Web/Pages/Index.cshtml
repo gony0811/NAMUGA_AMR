@@ -1,0 +1,22 @@
+﻿@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Home page";
+}
+
+<div class="text-center">
+    <h1 class="display-4">NAMUGA AMR</h1>
+    <p>자율주행 이동로봇 관리 시스템</p>
+    <hr />
+    <div class="row justify-content-center mt-4">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5 class="card-title">설정</h5>
+                    <p class="card-text">Modbus TCP 및 MQTT 연결을 설정합니다.</p>
+                    <a asp-page="/Settings" class="btn btn-primary">설정하기</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

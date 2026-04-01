@@ -1,0 +1,54 @@
+using System.Text;
+using AMR.Service;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+
+namespace AMR.Web.Pages;
+
+[IgnoreAntiforgeryToken]
+public class DepthCameraModel : PageModel
+{
+    private readonly DepthCameraService _depthCameraService;
+
+    public DepthCameraModel(DepthCameraService depthCameraService)
+    {
+        _depthCameraService = depthCameraService;
+    }
+
+    public bool IsConnected => _depthCameraService.IsConnected;
+
+    public void OnGet() { }
+
+    public IActionResult OnGetStatus()
+    {
+        return new JsonResult(new { connected = _depthCameraService.IsConnected });
+    }
+
+    public async Task OnGetStream()
+    {
+        Response.ContentType = "multipart/x-mixed-replace; boundary=frame";
+        var token = HttpContext.RequestAborted;
+
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                var frame = _depthCameraService.GetCurrentFrame();
+                if (frame.Length > 0)
+                {
+                    var header = $"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {frame.Length}\r\n\r\n";
+                    await Response.Body.WriteAsync(Encoding.UTF8.GetBytes(header), token);
+                    await Response.Body.WriteAsync(frame, token);
+                    await Response.Body.WriteAsync(Encoding.UTF8.GetBytes("\r\n"), token);
+                    await Response.Body.FlushAsync(token);
+                }
+
+                await Task.Delay(50, token);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 클라이언트 연결 종료 — 정상
+        }
+    }
+}

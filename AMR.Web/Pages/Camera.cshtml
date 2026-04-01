@@ -1,0 +1,72 @@
+@page
+@model AMR.Web.Pages.CameraModel
+@{
+    ViewData["Title"] = "Camera";
+}
+
+<div class="container-fluid mt-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0">Camera</h4>
+        <span id="camBadge" class="badge @(Model.IsConnected ? "bg-success" : "bg-secondary")">
+            Camera: @(Model.IsConnected ? "연결됨" : "확인 중...")
+        </span>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header py-2">
+                    <strong>RGB Camera (Orbbec GEMINI-2)</strong>
+                </div>
+                <div class="card-body text-center p-2">
+                    <img id="cameraFeed" src="/Camera?handler=Stream"
+                         style="max-width: 100%; height: auto; border: 1px solid #ddd; background: #000;"
+                         alt="Camera Feed" />
+                    <div id="cameraError" class="alert alert-warning mt-2" style="display: none;">
+                        카메라 연결이 끊어졌습니다. 재연결을 시도하고 있습니다...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        $(function () {
+            var $badge = $('#camBadge');
+            var $error = $('#cameraError');
+            var $feed = $('#cameraFeed');
+            var wasConnected = @(Model.IsConnected ? "true" : "false");
+
+            function checkStatus() {
+                $.getJSON('/Camera?handler=Status', function (data) {
+                    if (data.connected) {
+                        $badge.removeClass('bg-secondary bg-danger').addClass('bg-success').text('Camera: 연결됨');
+                        $error.hide();
+                        // 연결이 복구되면 스트림 재시작
+                        if (!wasConnected) {
+                            $feed.attr('src', '/Camera?handler=Stream&t=' + Date.now());
+                        }
+                        wasConnected = true;
+                    } else {
+                        $badge.removeClass('bg-success bg-secondary').addClass('bg-danger').text('Camera: 연결 끊김');
+                        $error.show();
+                        wasConnected = false;
+                    }
+                }).fail(function () {
+                    $badge.removeClass('bg-success bg-secondary').addClass('bg-danger').text('Camera: 오류');
+                });
+            }
+
+            setInterval(checkStatus, 3000);
+
+            // 이미지 로드 에러 시 재시도
+            $feed.on('error', function () {
+                setTimeout(function () {
+                    $feed.attr('src', '/Camera?handler=Stream&t=' + Date.now());
+                }, 3000);
+            });
+        });
+    </script>
+}
