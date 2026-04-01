@@ -1,5 +1,7 @@
+using System.Runtime.InteropServices;
 using AMR.Communication;
 using AMR.Service;
+using AMR.Service.Camera;
 using Autofac;
 
 namespace AMR;
@@ -40,6 +42,20 @@ public class AmrModule : Module
         builder.RegisterType<MainSequenceService>()
             .AsSelf()
             .SingleInstance();
+
+        // Camera - 플랫폼별 프로바이더 등록
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            builder.RegisterType<OrbbecSdkProvider>()
+                .As<ICameraProvider>()
+                .SingleInstance();
+        }
+        else
+        {
+            builder.RegisterType<OpenCvObsensorProvider>()
+                .As<ICameraProvider>()
+                .SingleInstance();
+        }
 
         builder.RegisterType<CameraService>()
             .AsSelf()
