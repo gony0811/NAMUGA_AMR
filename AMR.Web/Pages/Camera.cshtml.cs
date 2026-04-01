@@ -24,7 +24,17 @@ public class CameraModel : PageModel
         return new JsonResult(new { connected = _cameraService.IsConnected });
     }
 
-    public async Task OnGetStream()
+    public async Task OnGetRgbStream()
+    {
+        await StreamFrames(() => _cameraService.GetCurrentRgbFrame());
+    }
+
+    public async Task OnGetDepthStream()
+    {
+        await StreamFrames(() => _cameraService.GetCurrentDepthFrame());
+    }
+
+    private async Task StreamFrames(Func<byte[]> getFrame)
     {
         Response.ContentType = "multipart/x-mixed-replace; boundary=frame";
         var token = HttpContext.RequestAborted;
@@ -33,7 +43,7 @@ public class CameraModel : PageModel
         {
             while (!token.IsCancellationRequested)
             {
-                var frame = _cameraService.GetCurrentFrame();
+                var frame = getFrame();
                 if (frame.Length > 0)
                 {
                     var header = $"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {frame.Length}\r\n\r\n";

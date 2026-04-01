@@ -44,9 +44,5 @@ public class AmrModule : Module
         builder.RegisterType<CameraService>()
             .AsSelf()
             .SingleInstance();
-
-        builder.RegisterType<DepthCameraService>()
-            .AsSelf()
-            .SingleInstance();
     }
 }

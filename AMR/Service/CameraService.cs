@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenCvSharp;
@@ -11,7 +10,9 @@ public class CameraSettings
     public int DeviceIndex { get; set; }
     public int FrameWidth { get; set; } = 1280;
     public int FrameHeight { get; set; } = 720;
-    public int TargetFps { get; set; } = 20;
+    public int DepthFrameWidth { get; set; } = 640;
+    public int DepthFrameHeight { get; set; } = 480;
+    public int TargetFps { get; set; } = 15;
     public int JpegQuality { get; set; } = 75;
     public int WarmupDelayMs { get; set; } = 500;
 }
@@ -22,8 +23,10 @@ public class CameraService : BackgroundService
     private readonly CameraSettings _settings;
 
     private VideoCapture? _capture;
-    private byte[] _currentFrame = Array.Empty<byte>();
-    private readonly object _frameLock = new();
+    private byte[] _currentRgbFrame = Array.Empty<byte>();
+    private byte[] _currentDepthFrame = Array.Empty<byte>();
+    private readonly object _rgbLock = new();
+    private readonly object _depthLock = new();
     private volatile bool _isConnected;
 
     public bool IsConnected => _isConnected;
@@ -34,11 +37,19 @@ public class CameraService : BackgroundService
         _settings = settings;
     }
 
-    public byte[] GetCurrentFrame()
+    public byte[] GetCurrentRgbFrame()
     {
-        lock (_frameLock)
+        lock (_rgbLock)
         {
-            return _currentFrame;
+            return _currentRgbFrame;
+        }
+    }
+
+    public byte[] GetCurrentDepthFrame()
+    {
+        lock (_depthLock)
+        {
+            return _currentDepthFrame;
         }
     }
 
@@ -71,7 +82,9 @@ public class CameraService : BackgroundService
 
     private async Task CaptureLoop(CancellationToken stoppingToken)
     {
-        _capture = new VideoCapture(_settings.DeviceIndex, VideoCaptureAPIs.AVFOUNDATION);
+        // OBSENSOR 백엔드(2600)로 Orbbec 카메라 접근
+        const int CAP_OBSENSOR = 2600;
+        _capture = new VideoCapture(_settings.DeviceIndex, (VideoCaptureAPIs)CAP_OBSENSOR);
 
         if (!_capture.IsOpened())
         {
@@ -85,42 +98,47 @@ public class CameraService : BackgroundService
         _capture.Set(VideoCaptureProperties.FrameWidth, _settings.FrameWidth);
         _capture.Set(VideoCaptureProperties.FrameHeight, _settings.FrameHeight);
 
-        var actualWidth = _capture.Get(VideoCaptureProperties.FrameWidth);
-        var actualHeight = _capture.Get(VideoCaptureProperties.FrameHeight);
-        _logger.LogInformation(
-            "카메라 열림 (DeviceIndex: {Index}, 요청: {RW}x{RH}, 실제: {AW}x{AH})",
-            _settings.DeviceIndex, _settings.FrameWidth, _settings.FrameHeight,
-            actualWidth, actualHeight);
+        _logger.LogInformation("카메라 열림 (DeviceIndex: {Index})", _settings.DeviceIndex);
 
         // 카메라 워밍업 대기
         await Task.Delay(_settings.WarmupDelayMs, stoppingToken);
-
-        // 워밍업 프레임 버리기
-        using var warmupFrame = new Mat();
-        var warmupSuccess = 0;
-        for (var i = 0; i < 5; i++)
-        {
-            if (_capture.Read(warmupFrame) && !warmupFrame.Empty())
-                warmupSuccess++;
-            await Task.Delay(100, stoppingToken);
-        }
-
-        _logger.LogInformation("워밍업 프레임: {Success}/5 성공", warmupSuccess);
 
         var delayMs = 1000 / _settings.TargetFps;
         var consecutiveFailures = 0;
         const int maxConsecutiveFailures = 10;
         var connected = false;
 
-        using var frame = new Mat();
+        using var rgbFrame = new Mat();
+        using var depthFrame = new Mat();
+        using var normalized = new Mat();
+        using var colorized = new Mat();
+
         while (!stoppingToken.IsCancellationRequested)
         {
-            if (!_capture.Read(frame) || frame.Empty())
+            if (!_capture.Grab())
             {
                 consecutiveFailures++;
                 if (consecutiveFailures >= maxConsecutiveFailures)
                 {
-                    _logger.LogWarning("프레임 읽기 {Count}회 연속 실패. 카메라 연결 끊김.", maxConsecutiveFailures);
+                    _logger.LogWarning("프레임 Grab {Count}회 연속 실패. 카메라 연결 끊김.", maxConsecutiveFailures);
+                    _isConnected = false;
+                    break;
+                }
+
+                await Task.Delay(100, stoppingToken);
+                continue;
+            }
+
+            // channel 0: depth map, channel 1: BGR image
+            var hasDepth = _capture.Retrieve(depthFrame, 0) && !depthFrame.Empty();
+            var hasRgb = _capture.Retrieve(rgbFrame, 1) && !rgbFrame.Empty();
+
+            if (!hasDepth && !hasRgb)
+            {
+                consecutiveFailures++;
+                if (consecutiveFailures >= maxConsecutiveFailures)
+                {
+                    _logger.LogWarning("프레임 Retrieve {Count}회 연속 실패. 카메라 연결 끊김.", maxConsecutiveFailures);
                     _isConnected = false;
                     break;
                 }
@@ -133,19 +151,44 @@ public class CameraService : BackgroundService
 
             if (!connected)
             {
-                _logger.LogInformation("카메라 연결 성공 (프레임 크기: {W}x{H})", frame.Width, frame.Height);
+                _logger.LogInformation("카메라 연결 성공 (RGB: {RW}x{RH}, Depth: {DW}x{DH})",
+                    hasRgb ? rgbFrame.Width : 0, hasRgb ? rgbFrame.Height : 0,
+                    hasDepth ? depthFrame.Width : 0, hasDepth ? depthFrame.Height : 0);
                 connected = true;
                 _isConnected = true;
             }
 
-            var buf = EncodeToJpeg(frame);
-            lock (_frameLock)
+            if (hasRgb)
             {
-                _currentFrame = buf;
+                var rgbBuf = EncodeToJpeg(rgbFrame);
+                lock (_rgbLock)
+                {
+                    _currentRgbFrame = rgbBuf;
+                }
+            }
+
+            if (hasDepth)
+            {
+                var depthBuf = ColorizeAndEncodeDepth(depthFrame, normalized, colorized);
+                lock (_depthLock)
+                {
+                    _currentDepthFrame = depthBuf;
+                }
             }
 
             await Task.Delay(delayMs, stoppingToken);
         }
+    }
+
+    private byte[] ColorizeAndEncodeDepth(Mat depthFrame, Mat normalized, Mat colorized)
+    {
+        // 16-bit depth → 8-bit 정규화
+        depthFrame.ConvertTo(normalized, MatType.CV_8U, 255.0 / 10000.0);
+
+        // 컬러맵 적용 (TURBO: 직관적인 depth 시각화)
+        Cv2.ApplyColorMap(normalized, colorized, ColormapTypes.Turbo);
+
+        return EncodeToJpeg(colorized);
     }
 
     private byte[] EncodeToJpeg(Mat frame)
@@ -174,9 +217,14 @@ public class CameraService : BackgroundService
             _capture = null;
         }
 
-        lock (_frameLock)
+        lock (_rgbLock)
         {
-            _currentFrame = Array.Empty<byte>();
+            _currentRgbFrame = Array.Empty<byte>();
+        }
+
+        lock (_depthLock)
+        {
+            _currentDepthFrame = Array.Empty<byte>();
         }
     }
 

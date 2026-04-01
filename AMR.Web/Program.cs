@@ -27,24 +27,12 @@ builder.Host.ConfigureContainer<ContainerBuilder>(containerBuilder =>
             DeviceIndex = section.GetValue("DeviceIndex", 0),
             FrameWidth = section.GetValue("FrameWidth", 1280),
             FrameHeight = section.GetValue("FrameHeight", 720),
-            TargetFps = section.GetValue("TargetFps", 20),
-            JpegQuality = section.GetValue("JpegQuality", 75)
-        };
-    }).As<CameraSettings>().SingleInstance();
-
-    // Depth 카메라 설정을 appsettings.json에서 로드하여 등록
-    containerBuilder.Register(c =>
-    {
-        var section = builder.Configuration.GetSection("DepthCameraSettings");
-        return new DepthCameraSettings
-        {
-            DeviceIndex = section.GetValue("DeviceIndex", 0),
-            FrameWidth = section.GetValue("FrameWidth", 640),
-            FrameHeight = section.GetValue("FrameHeight", 480),
+            DepthFrameWidth = section.GetValue("DepthFrameWidth", 640),
+            DepthFrameHeight = section.GetValue("DepthFrameHeight", 480),
             TargetFps = section.GetValue("TargetFps", 15),
             JpegQuality = section.GetValue("JpegQuality", 75)
         };
-    }).As<DepthCameraSettings>().SingleInstance();
+    }).As<CameraSettings>().SingleInstance();
 
     // Modbus 설정을 appsettings.json에서 로드하여 등록
     containerBuilder.Register(c =>
@@ -90,7 +78,6 @@ builder.Host.ConfigureContainer<ContainerBuilder>(containerBuilder =>
 // BackgroundService 등록
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MainSequenceService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CameraService>());
-builder.Services.AddHostedService(sp => sp.GetRequiredService<DepthCameraService>());
 
 // Add services to the container.
 builder.Services.AddRazorPages();

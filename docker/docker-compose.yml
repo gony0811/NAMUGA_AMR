@@ -1,0 +1,16 @@
+version: '3.8'
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
+      - "1883:1883"   # MQTT 포트 추가
+      - "8883:8883"   # MQTT over SSL (필요 시)
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    # 컨테이너 실행 시 플러그인 활성화 명령 실행
+    command: >
+      sh -c "rabbitmq-plugins enable --offline rabbitmq_mqtt && rabbitmq-server"

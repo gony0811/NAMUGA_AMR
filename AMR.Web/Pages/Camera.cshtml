@@ -13,21 +13,34 @@
     </div>
 
     <div class="row">
-        <div class="col-12">
+        <div class="col-md-6">
             <div class="card">
                 <div class="card-header py-2">
-                    <strong>RGB Camera (Orbbec GEMINI-2)</strong>
+                    <strong>RGB Camera</strong>
                 </div>
                 <div class="card-body text-center p-2">
-                    <img id="cameraFeed" src="/Camera?handler=Stream"
+                    <img id="rgbFeed" src="/Camera?handler=RgbStream"
                          style="max-width: 100%; height: auto; border: 1px solid #ddd; background: #000;"
-                         alt="Camera Feed" />
-                    <div id="cameraError" class="alert alert-warning mt-2" style="display: none;">
-                        카메라 연결이 끊어졌습니다. 재연결을 시도하고 있습니다...
-                    </div>
+                         alt="RGB Camera Feed" />
                 </div>
             </div>
         </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header py-2">
+                    <strong>Depth Camera</strong>
+                </div>
+                <div class="card-body text-center p-2">
+                    <img id="depthFeed" src="/Camera?handler=DepthStream"
+                         style="max-width: 100%; height: auto; border: 1px solid #ddd; background: #000;"
+                         alt="Depth Camera Feed" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="cameraError" class="alert alert-warning mt-2" style="display: none;">
+        카메라 연결이 끊어졌습니다. 재연결을 시도하고 있습니다...
     </div>
 </div>
 
@@ -36,7 +49,8 @@
         $(function () {
             var $badge = $('#camBadge');
             var $error = $('#cameraError');
-            var $feed = $('#cameraFeed');
+            var $rgbFeed = $('#rgbFeed');
+            var $depthFeed = $('#depthFeed');
             var wasConnected = @(Model.IsConnected ? "true" : "false");
 
             function checkStatus() {
@@ -44,9 +58,9 @@
                     if (data.connected) {
                         $badge.removeClass('bg-secondary bg-danger').addClass('bg-success').text('Camera: 연결됨');
                         $error.hide();
-                        // 연결이 복구되면 스트림 재시작
                         if (!wasConnected) {
-                            $feed.attr('src', '/Camera?handler=Stream&t=' + Date.now());
+                            $rgbFeed.attr('src', '/Camera?handler=RgbStream&t=' + Date.now());
+                            $depthFeed.attr('src', '/Camera?handler=DepthStream&t=' + Date.now());
                         }
                         wasConnected = true;
                     } else {
@@ -61,10 +75,15 @@
 
             setInterval(checkStatus, 3000);
 
-            // 이미지 로드 에러 시 재시도
-            $feed.on('error', function () {
+            $rgbFeed.on('error', function () {
                 setTimeout(function () {
-                    $feed.attr('src', '/Camera?handler=Stream&t=' + Date.now());
+                    $rgbFeed.attr('src', '/Camera?handler=RgbStream&t=' + Date.now());
+                }, 3000);
+            });
+
+            $depthFeed.on('error', function () {
+                setTimeout(function () {
+                    $depthFeed.attr('src', '/Camera?handler=DepthStream&t=' + Date.now());
                 }, 3000);
             });
         });
