@@ -1,0 +1,23 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# 
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AMR", "AMR\AMR.csproj", "{CFE7A81C-AD20-4F45-9B34-D3692EA49267}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AMR.Web", "AMR.Web\AMR.Web.csproj", "{8EAE898A-1DB5-4F91-994E-1E383952DAC1}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CFE7A81C-AD20-4F45-9B34-D3692EA49267}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CFE7A81C-AD20-4F45-9B34-D3692EA49267}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CFE7A81C-AD20-4F45-9B34-D3692EA49267}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CFE7A81C-AD20-4F45-9B34-D3692EA49267}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8EAE898A-1DB5-4F91-994E-1E383952DAC1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8EAE898A-1DB5-4F91-994E-1E383952DAC1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8EAE898A-1DB5-4F91-994E-1E383952DAC1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8EAE898A-1DB5-4F91-994E-1E383952DAC1}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
