@@ -207,8 +207,8 @@ public class CobotMonitoringModel : PageModel
             if (_client is not { IsConnected: true })
                 return new JsonResult(new { success = false, error = "연결되지 않음" });
 
-            // 제어 명령 Coil 500-510 읽기
-            var coils = await _client.ReadRawCoilsAsync(500, 11);
+            // 제어 명령 Coil 영역 읽기 (Pause~ClearAllFaults)
+            var coils = await _client.ReadRawCoilsAsync(CobotRegisterMap.Coil.Pause, 11);
             var result = new object[11];
             var names = new Dictionary<int, string>
             {
@@ -220,9 +220,9 @@ public class CobotMonitoringModel : PageModel
             for (int i = 0; i < 11; i++)
                 result[i] = new
                 {
-                    address = 500 + i,
+                    address = CobotRegisterMap.Coil.Pause + i,
                     value = coils[i],
-                    name = names.TryGetValue(i, out var n) ? n : $"Coil {500 + i}"
+                    name = names.TryGetValue(i, out var n) ? n : $"Coil {CobotRegisterMap.Coil.Pause + i}"
                 };
 
             return new JsonResult(new { success = true, coils = result });
@@ -282,6 +282,68 @@ public class CobotMonitoringModel : PageModel
                 statusResult[i] = new { address = 310 + i, value = statusRegs[i], hex = $"0x{statusRegs[i]:X4}" };
 
             return new JsonResult(new { success = true, analogOutputs = aoResult, statusRegisters = statusResult });
+        }
+        catch (Exception ex)
+        {
+            return new JsonResult(new { success = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>Input Register + Holding Register 전체 스캔 (비영 값 찾기)</summary>
+    public async Task<IActionResult> OnGetDiagnosticScanAsync()
+    {
+        try
+        {
+            if (_client is not { IsConnected: true })
+                return new JsonResult(new { success = false, error = "연결되지 않음" });
+
+            var nonZeroInputs = new List<object>();
+            var nonZeroHoldings = new List<object>();
+
+            // Input Register 0~999 범위 스캔 (125개씩 블록 읽기, Modbus 최대 125 워드)
+            for (ushort start = 0; start < 1000; start += 125)
+            {
+                try
+                {
+                    var count = (ushort)Math.Min(125, 1000 - start);
+                    var regs = await _client.ReadRawInputRegistersAsync(start, count);
+                    for (int i = 0; i < regs.Length; i++)
+                    {
+                        if (regs[i] != 0)
+                            nonZeroInputs.Add(new { address = start + i, value = regs[i], hex = $"0x{regs[i]:X4}" });
+                    }
+                }
+                catch
+                {
+                    // 범위 밖이면 무시하고 계속
+                }
+            }
+
+            // Holding Register 0~999 범위 스캔
+            for (ushort start = 0; start < 1000; start += 125)
+            {
+                try
+                {
+                    var count = (ushort)Math.Min(125, 1000 - start);
+                    var regs = await _client.ReadRawHoldingRegistersAsync(start, count);
+                    for (int i = 0; i < regs.Length; i++)
+                    {
+                        if (regs[i] != 0)
+                            nonZeroHoldings.Add(new { address = start + i, value = regs[i], hex = $"0x{regs[i]:X4}" });
+                    }
+                }
+                catch
+                {
+                    // 범위 밖이면 무시하고 계속
+                }
+            }
+
+            return new JsonResult(new
+            {
+                success = true,
+                inputRegisters = new { scannedRange = "0-999", nonZeroCount = nonZeroInputs.Count, registers = nonZeroInputs },
+                holdingRegisters = new { scannedRange = "0-999", nonZeroCount = nonZeroHoldings.Count, registers = nonZeroHoldings }
+            });
         }
         catch (Exception ex)
         {
