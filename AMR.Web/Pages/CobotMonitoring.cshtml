@@ -50,6 +50,7 @@
             <div class="card mb-3">
                 <div class="card-header py-2"><strong>Cobot 상태 (Input Register 310-322)</strong></div>
                 <div class="card-body py-2">
+                    <div id="statusError" class="alert alert-danger py-1 mb-2 small" style="display:none;"></div>
                     <table class="table table-sm table-borderless mb-0">
                         <tbody>
                             <tr><td class="text-muted" style="width:45%">Enable State</td><td id="val-enableState">-</td></tr>
@@ -73,7 +74,7 @@
             @* 디지털 출력 DO (Discrete Input) *@
             <div class="card mb-3">
                 <div class="card-header py-2 d-flex justify-content-between align-items-center">
-                    <strong>디지털 출력 DO0~DO127 (Discrete Input)</strong>
+                    <strong>디지털 출력 DO0~DO127 (Discrete Input — Robot→PLC)</strong>
                     <button id="btnReadDO" class="btn btn-outline-primary btn-sm py-0">읽기</button>
                 </div>
                 <div class="card-body py-2">
@@ -83,10 +84,36 @@
                 </div>
             </div>
 
+            @* 디지털 입력 DI (Coil 읽기) — 우리가 쓴 값 확인 *@
+            <div class="card mb-3">
+                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                    <strong>디지털 입력 DI0~DI127 (Coil — PLC→Robot)</strong>
+                    <button id="btnReadDI" class="btn btn-outline-primary btn-sm py-0">읽기</button>
+                </div>
+                <div class="card-body py-2">
+                    <div id="diGrid" class="d-flex flex-wrap gap-1" style="font-size: 0.75rem;">
+                        <span class="text-muted small">버튼을 눌러 DI 상태를 읽어주세요</span>
+                    </div>
+                </div>
+            </div>
+
+            @* 아날로그 입력 AI (Holding Register 읽기) — 우리가 쓴 값 확인 *@
+            <div class="card mb-3">
+                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                    <strong>아날로그 입력 AI0~AI31 (Holding Register — PLC→Robot)</strong>
+                    <button id="btnReadAI" class="btn btn-outline-primary btn-sm py-0">읽기</button>
+                </div>
+                <div class="card-body py-2">
+                    <div id="aiResult" class="small">
+                        <span class="text-muted">버튼을 눌러 AI 값을 읽어주세요</span>
+                    </div>
+                </div>
+            </div>
+
             @* 아날로그 출력 AO (Input Register 100-131) *@
             <div class="card mb-3">
                 <div class="card-header py-2 d-flex justify-content-between align-items-center">
-                    <strong>아날로그 출력 AO0~AO31 (Input Register)</strong>
+                    <strong>아날로그 출력 AO0~AO31 (Input Register — Robot→PLC)</strong>
                     <button id="btnReadAO" class="btn btn-outline-primary btn-sm py-0">읽기</button>
                 </div>
                 <div class="card-body py-2">
@@ -104,6 +131,7 @@
                         <button id="btnRawCoils" class="btn btn-light btn-sm py-0">Coil (500-510)</button>
                         <button id="btnRawInputRegs" class="btn btn-light btn-sm py-0">Input Reg</button>
                         <button id="btnRawHolding" class="btn btn-light btn-sm py-0">Holding Reg</button>
+                        <button id="btnDiagScan" class="btn btn-warning btn-sm py-0">전체 스캔</button>
                     </div>
                 </div>
                 <div class="card-body py-2">
@@ -198,6 +226,8 @@
 @section Scripts {
 <script>
     let pollTimer = null;
+    let pollFailCount = 0;
+    const maxPollFails = 3;
 
     // ── 연결 ──
     $('#btnConnect').click(function () {
@@ -208,6 +238,7 @@
             url: '/CobotMonitoring?handler=Connect',
             method: 'POST',
             contentType: 'application/json',
+            timeout: 10000,
             data: JSON.stringify({
                 ipAddress: $('#ipAddress').val(),
                 port: parseInt($('#port').val()) || 502,
@@ -223,8 +254,9 @@
                     updateBadge(false);
                 }
             },
-            error: function () {
-                showConnResult(false, '요청 실패');
+            error: function (xhr, status) {
+                const msg = status === 'timeout' ? '연결 시간 초과 (10초)' : '요청 실패';
+                showConnResult(false, msg);
             },
             complete: function () {
                 btn.prop('disabled', false);
@@ -234,23 +266,33 @@
 
     // ── 해제 ──
     $('#btnDisconnect').click(function () {
-        $.ajax({
-            url: '/CobotMonitoring?handler=Disconnect',
-            method: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify({}),
-            success: function (res) {
-                showConnResult(true, '연결 해제됨');
-                updateBadge(false);
-                stopPolling();
-                clearStatus();
-            }
-        });
+        // 1) 폴링을 먼저 중단하여 진행 중인 Modbus 읽기 방지
+        stopPolling();
+        updateBadge(false);
+        clearStatus();
+
+        // 2) 잠시 대기 후 disconnect 전송 (진행 중 AJAX 완료 대기)
+        setTimeout(function () {
+            $.ajax({
+                url: '/CobotMonitoring?handler=Disconnect',
+                method: 'POST',
+                contentType: 'application/json',
+                timeout: 10000,
+                data: JSON.stringify({}),
+                success: function (res) {
+                    showConnResult(res.success, res.success ? '연결 해제됨' : res.error);
+                },
+                error: function () {
+                    showConnResult(false, '연결 해제 요청 실패');
+                }
+            });
+        }, 500);
     });
 
     // ── 상태 폴링 ──
     function startPolling() {
         stopPolling();
+        pollFailCount = 0;
         pollStatus();
         pollTimer = setInterval(pollStatus, 2000);
     }
@@ -265,6 +307,7 @@
     function pollStatus() {
         $.getJSON('/CobotMonitoring?handler=Status', function (res) {
             if (res.success && res.data) {
+                pollFailCount = 0;
                 const d = res.data;
                 $('#val-enableState').text(d.enableStateLabel + ' (' + d.enableState + ')');
                 $('#val-robotMode').text(d.robotModeLabel + ' (' + d.robotMode + ')');
@@ -283,14 +326,25 @@
                 $('#val-motionInPlace').text(d.motionInPlace);
                 $('#val-safetyStopS0').text(d.safetyStopS0);
                 $('#val-safetyStopS1').text(d.safetyStopS1);
+                $('#statusError').hide();
             } else {
+                pollFailCount++;
+                const errMsg = res.error || '알 수 없는 오류';
+                $('#statusError').text('읽기 실패 (' + pollFailCount + '/' + maxPollFails + '): ' + errMsg).show();
+                if (pollFailCount >= maxPollFails) {
+                    updateBadge(false);
+                    stopPolling();
+                    clearStatus();
+                }
+            }
+        }).fail(function (xhr) {
+            pollFailCount++;
+            $('#statusError').text('요청 실패 (' + pollFailCount + '/' + maxPollFails + '): ' + (xhr.statusText || 'Network Error')).show();
+            if (pollFailCount >= maxPollFails) {
                 updateBadge(false);
                 stopPolling();
                 clearStatus();
             }
-        }).fail(function () {
-            updateBadge(false);
-            stopPolling();
         });
     }
 
@@ -326,6 +380,7 @@
             data: JSON.stringify({ command: 'WriteDI', value: val, index: idx }),
             success: function (res) {
                 addWriteLog('DI[' + idx + ']', val ? 'ON' : 'OFF', res.success, res.error);
+                if (res.success) readDI();
             },
             error: function () {
                 addWriteLog('DI[' + idx + ']', '-', false, '요청 실패');
@@ -344,6 +399,7 @@
             data: JSON.stringify({ index: idx, value: val }),
             success: function (res) {
                 addWriteLog('AI[' + idx + ']', val, res.success, res.error);
+                if (res.success) readAI();
             },
             error: function () {
                 addWriteLog('AI[' + idx + ']', '-', false, '요청 실패');
@@ -359,7 +415,41 @@
         $('#writeLog').prepend(`<tr><td>${now}</td><td>${command} = ${value}</td><td>${badge}</td></tr>`);
     }
 
-    // ── DO 읽기 ──
+    // ── DI 읽기 (Coil — 우리가 쓴 값) ──
+    function readDI() {
+        $.getJSON('/CobotMonitoring?handler=RawDiCoils', function (res) {
+            if (res.success) {
+                let html = '';
+                res.digitalInputs.forEach(function (di) {
+                    const cls = di.value ? 'bg-success' : 'bg-secondary';
+                    html += `<span class="badge ${cls}" style="width:48px;" title="DI${di.index} (addr ${di.address})">DI${di.index}</span>`;
+                });
+                $('#diGrid').html(html);
+            } else {
+                $('#diGrid').html('<span class="text-danger small">' + res.error + '</span>');
+            }
+        });
+    }
+    $('#btnReadDI').click(readDI);
+
+    // ── AI 읽기 (Holding Register — 우리가 쓴 값) ──
+    function readAI() {
+        $.getJSON('/CobotMonitoring?handler=RawHolding', function (res) {
+            if (res.success) {
+                let html = '<table class="table table-sm table-bordered mb-0"><thead><tr><th>Index</th><th>Address</th><th>Value</th><th>Hex</th></tr></thead><tbody>';
+                res.registers.forEach(function (r) {
+                    html += `<tr><td>AI${r.index}</td><td>${r.address}</td><td>${r.value}</td><td>${r.hex}</td></tr>`;
+                });
+                html += '</tbody></table>';
+                $('#aiResult').html(html);
+            } else {
+                $('#aiResult').html('<span class="text-danger small">' + (res.error || 'Error') + '</span>');
+            }
+        });
+    }
+    $('#btnReadAI').click(readAI);
+
+    // ── DO 읽기 (Discrete Input — 로봇이 출력한 값) ──
     $('#btnReadDO').click(function () {
         $.getJSON('/CobotMonitoring?handler=RawDiscreteInputs', function (res) {
             if (res.success) {
@@ -375,7 +465,7 @@
         });
     });
 
-    // ── AO 읽기 ──
+    // ── AO 읽기 (Input Register — 로봇이 출력한 값) ──
     $('#btnReadAO').click(function () {
         $.getJSON('/CobotMonitoring?handler=RawInputRegisters', function (res) {
             if (res.success && res.analogOutputs) {
@@ -443,6 +533,45 @@
             } else {
                 $('#rawResult').text('Error: ' + res.error);
             }
+        });
+    });
+
+    // ── 전체 스캔 ──
+    $('#btnDiagScan').click(function () {
+        const btn = $(this);
+        btn.prop('disabled', true).text('스캔 중...');
+        $.getJSON('/CobotMonitoring?handler=DiagnosticScan', function (res) {
+            if (res.success) {
+                let txt = '=== Input Register 스캔 (0-999) ===\n';
+                txt += '비영 레지스터: ' + res.inputRegisters.nonZeroCount + '개\n';
+                if (res.inputRegisters.registers.length > 0) {
+                    txt += 'Addr   Value   Hex\n';
+                    txt += '─────  ──────  ──────\n';
+                    res.inputRegisters.registers.forEach(function (r) {
+                        txt += `  ${String(r.address).padStart(3)}    ${String(r.value).padStart(5)}   ${r.hex}\n`;
+                    });
+                } else {
+                    txt += '(모든 값이 0)\n';
+                }
+                txt += '\n=== Holding Register 스캔 (0-999) ===\n';
+                txt += '비영 레지스터: ' + res.holdingRegisters.nonZeroCount + '개\n';
+                if (res.holdingRegisters.registers.length > 0) {
+                    txt += 'Addr   Value   Hex\n';
+                    txt += '─────  ──────  ──────\n';
+                    res.holdingRegisters.registers.forEach(function (r) {
+                        txt += `  ${String(r.address).padStart(3)}    ${String(r.value).padStart(5)}   ${r.hex}\n`;
+                    });
+                } else {
+                    txt += '(모든 값이 0)\n';
+                }
+                $('#rawResult').text(txt);
+            } else {
+                $('#rawResult').text('Error: ' + res.error);
+            }
+        }).fail(function () {
+            $('#rawResult').text('요청 실패');
+        }).always(function () {
+            btn.prop('disabled', false).text('전체 스캔');
         });
     });
 

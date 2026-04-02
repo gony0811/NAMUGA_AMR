@@ -37,6 +37,13 @@ public class CobotService
         _logger.LogInformation("Cobot Modbus TCP 연결 해제");
     }
 
+    /// <summary>Modbus TCP 연결 해제 (진행 중 작업 완료 대기)</summary>
+    public async Task DisconnectAsync(CancellationToken ct = default)
+    {
+        await _modbusClient.DisconnectAsync(ct);
+        _logger.LogInformation("Cobot Modbus TCP 연결 해제");
+    }
+
     #endregion
 
     #region 상태 읽기

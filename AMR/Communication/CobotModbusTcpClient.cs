@@ -34,21 +34,64 @@ public class CobotModbusTcpClient : IDisposable
     {
         if (IsConnected) return;
 
-        _tcpClient = new TcpClient();
-        await _tcpClient.ConnectAsync(_settings.IpAddress, _settings.Port, ct);
+        // zombie 리소스 정리: master가 있으면 master가 tcpClient 포함 정리
+        if (_master != null)
+        {
+            try { _master.Dispose(); } catch { }
+            _master = null;
+            _tcpClient = null;
+        }
+        else if (_tcpClient != null)
+        {
+            try { _tcpClient.Dispose(); } catch { }
+            _tcpClient = null;
+        }
 
-        var factory = new ModbusFactory();
-        _master = factory.CreateMaster(_tcpClient);
-        _master.Transport.ReadTimeout = 3000;
-        _master.Transport.WriteTimeout = 3000;
+        var tcpClient = new TcpClient();
+        try
+        {
+            await tcpClient.ConnectAsync(_settings.IpAddress, _settings.Port, ct);
+
+            var factory = new ModbusFactory();
+            var master = factory.CreateMaster(tcpClient);
+            master.Transport.ReadTimeout = 3000;
+            master.Transport.WriteTimeout = 3000;
+
+            _tcpClient = tcpClient;
+            _master = master;
+        }
+        catch
+        {
+            tcpClient.Dispose();
+            throw;
+        }
     }
 
-    /// <summary>연결 해제</summary>
+    /// <summary>연결 해제 — 진행 중인 Modbus 작업이 끝난 후 안전하게 닫음</summary>
+    public async Task DisconnectAsync(CancellationToken ct = default)
+    {
+        // 진행 중인 Modbus 작업이 완료될 때까지 대기 (최대 5초)
+        var acquired = await _semaphore.WaitAsync(TimeSpan.FromSeconds(5), ct);
+        try
+        {
+            // NModbus dispose 체인: Master → TcpClientAdapter → TcpClient → Socket.Close
+            try { _master?.Dispose(); }
+            catch { }
+            _master = null;
+            _tcpClient = null;
+        }
+        finally
+        {
+            if (acquired) _semaphore.Release();
+        }
+    }
+
+    /// <summary>동기 연결 해제 (Dispose용)</summary>
     public void Disconnect()
     {
-        _master?.Dispose();
+        try { _master?.Dispose(); }
+        catch { }
         _master = null;
-        _tcpClient?.Dispose();
         _tcpClient = null;
     }
 
@@ -58,35 +101,35 @@ public class CobotModbusTcpClient : IDisposable
 
     /// <summary>일시정지</summary>
     public Task PauseAsync(CancellationToken ct = default)
-        => WriteSingleCoilAsync(CobotRegisterMap.Coil.Pause, true, ct);
+        => ToggleCoilAsync(CobotRegisterMap.Coil.Pause, ct);
 
     /// <summary>복구</summary>
     public Task RecoveryAsync(CancellationToken ct = default)
-        => WriteSingleCoilAsync(CobotRegisterMap.Coil.Recovery, true, ct);
+        => ToggleCoilAsync(CobotRegisterMap.Coil.Recovery, ct);
 
     /// <summary>시작</summary>
     public Task StartAsync(CancellationToken ct = default)
-        => WriteSingleCoilAsync(CobotRegisterMap.Coil.Start, true, ct);
+        => ToggleCoilAsync(CobotRegisterMap.Coil.Start, ct);
 
     /// <summary>정지</summary>
     public Task StopAsync(CancellationToken ct = default)
-        => WriteSingleCoilAsync(CobotRegisterMap.Coil.Stop, true, ct);
+        => ToggleCoilAsync(CobotRegisterMap.Coil.Stop, ct);
 
     /// <summary>원점 이동</summary>
     public Task MoveToJobOriginAsync(CancellationToken ct = default)
-        => WriteSingleCoilAsync(CobotRegisterMap.Coil.MoveToJobOrigin, true, ct);
+        => ToggleCoilAsync(CobotRegisterMap.Coil.MoveToJobOrigin, ct);
 
     /// <summary>수동/자동 전환</summary>
     public Task ManualAutoSwitchAsync(CancellationToken ct = default)
-        => WriteSingleCoilAsync(CobotRegisterMap.Coil.ManualAutoSwitch, true, ct);
+        => ToggleCoilAsync(CobotRegisterMap.Coil.ManualAutoSwitch, ct);
 
     /// <summary>메인 프로그램 시작</summary>
     public Task StartMainProgramAsync(CancellationToken ct = default)
-        => WriteSingleCoilAsync(CobotRegisterMap.Coil.StartMainProgram, true, ct);
+        => ToggleCoilAsync(CobotRegisterMap.Coil.StartMainProgram, ct);
 
     /// <summary>전체 오류 해제</summary>
     public Task ClearAllFaultsAsync(CancellationToken ct = default)
-        => WriteSingleCoilAsync(CobotRegisterMap.Coil.ClearAllFaults, true, ct);
+        => ToggleCoilAsync(CobotRegisterMap.Coil.ClearAllFaults, ct);
 
     /// <summary>DI 비트 개별 쓰기 (index: 0~127)</summary>
     public Task WriteDigitalInputAsync(ushort index, bool value, CancellationToken ct = default)
@@ -204,6 +247,14 @@ public class CobotModbusTcpClient : IDisposable
         {
             _semaphore.Release();
         }
+    }
+
+    /// <summary>Coil ON → 200ms 대기 → OFF (토글 명령)</summary>
+    private async Task ToggleCoilAsync(ushort address, CancellationToken ct)
+    {
+        await WriteSingleCoilAsync(address, true, ct);
+        await Task.Delay(200, ct);
+        await WriteSingleCoilAsync(address, false, ct);
     }
 
     private async Task WriteSingleCoilAsync(ushort address, bool value, CancellationToken ct)

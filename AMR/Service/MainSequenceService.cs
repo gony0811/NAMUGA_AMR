@@ -30,17 +30,12 @@ public class MainSequenceService : BackgroundService
     {
         _logger.LogInformation("MainSequenceService 시작");
 
-        // AMR Modbus TCP, Cobot Modbus TCP, MQTT 브로커를 병렬로 독립 연결
+        // AMR Modbus TCP, MQTT 브로커를 병렬로 독립 연결
+        // Cobot Modbus TCP는 웹 페이지(CobotMonitoring)에서 수동 연결/해제 관리
         var amrTask = ConnectWithRetryAsync(
             "AMR Modbus TCP",
             () => _amrService.IsConnected,
             ct => _amrService.ConnectAsync(ct),
-            stoppingToken);
-
-        var cobotTask = ConnectWithRetryAsync(
-            "Cobot Modbus TCP",
-            () => _cobotService.IsConnected,
-            ct => _cobotService.ConnectAsync(ct),
             stoppingToken);
 
         var mqttTask = ConnectWithRetryAsync(
@@ -49,9 +44,9 @@ public class MainSequenceService : BackgroundService
             ct => _mqttService.ConnectAsync(ct),
             stoppingToken);
 
-        await Task.WhenAll(amrTask, cobotTask, mqttTask);
+        await Task.WhenAll(amrTask, mqttTask);
 
-        _logger.LogInformation("모든 서비스 연결 완료 — 상태 변경 감지 시 퍼블리시 시작 (1초 폴링)");
+        _logger.LogInformation("AMR/MQTT 연결 완료 — 상태 변경 감지 시 퍼블리시 시작 (1초 폴링)");
 
         AmrStatusMessage? previousStatus = null;
 
@@ -66,14 +61,6 @@ public class MainSequenceService : BackgroundService
                     await _amrService.ConnectAsync(stoppingToken);
                     _logger.LogInformation("AMR Modbus TCP 재연결 완료");
                     previousStatus = null;
-                }
-
-                // Cobot 연결이 끊어진 경우 재연결 시도
-                if (!_cobotService.IsConnected)
-                {
-                    _logger.LogWarning("Cobot Modbus TCP 연결 끊김 — 재연결 시도");
-                    await _cobotService.ConnectAsync(stoppingToken);
-                    _logger.LogInformation("Cobot Modbus TCP 재연결 완료");
                 }
 
                 // AMR 상태 읽기 및 MQTT 발행
@@ -96,27 +83,6 @@ public class MainSequenceService : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "AMR 메인 루프 실패");
-            }
-
-            // Cobot 상태 읽기 (AMR와 독립적으로 처리)
-            try
-            {
-                if (_cobotService.IsConnected)
-                {
-                    var cobotStatus = await _cobotService.ReadStatusAsync(stoppingToken);
-                    _logger.LogInformation(
-                        "Cobot 상태: Enable={Enable}, Mode={Mode}, Status={Status}, Fault={Fault}, SubFault={SubFault}",
-                        cobotStatus.EnableState, cobotStatus.RobotMode, cobotStatus.OperationStatus,
-                        cobotStatus.MasterFaultCode, cobotStatus.SubFaultCode);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Cobot 상태 읽기 실패");
             }
 
             await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken);
