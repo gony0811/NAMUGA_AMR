@@ -5,23 +5,20 @@ using Microsoft.Extensions.Logging;
 namespace AMR.Service;
 
 /// <summary>
-/// 메인 시퀀스 서비스 — 전체 서비스 연결 및 동작 시퀀스 관리
+/// 메인 시퀀스 서비스 — AMR 상태 읽기 및 MQTT 퍼블리시 오케스트레이션
 /// </summary>
 public class MainSequenceService : BackgroundService
 {
     private readonly AmrService _amrService;
-    private readonly CobotService _cobotService;
     private readonly MqttService _mqttService;
     private readonly ILogger<MainSequenceService> _logger;
 
     public MainSequenceService(
         AmrService amrService,
-        CobotService cobotService,
         MqttService mqttService,
         ILogger<MainSequenceService> logger)
     {
         _amrService = amrService;
-        _cobotService = cobotService;
         _mqttService = mqttService;
         _logger = logger;
     }
@@ -30,40 +27,13 @@ public class MainSequenceService : BackgroundService
     {
         _logger.LogInformation("MainSequenceService 시작");
 
-        // AMR Modbus TCP, MQTT 브로커를 병렬로 독립 연결
-        // Cobot Modbus TCP는 웹 페이지(CobotMonitoring)에서 수동 연결/해제 관리
-        var amrTask = ConnectWithRetryAsync(
-            "AMR Modbus TCP",
-            () => _amrService.IsConnected,
-            ct => _amrService.ConnectAsync(ct),
-            stoppingToken);
-
-        var mqttTask = ConnectWithRetryAsync(
-            "MQTT 브로커",
-            () => _mqttService.IsConnected,
-            ct => _mqttService.ConnectAsync(ct),
-            stoppingToken);
-
-        await Task.WhenAll(amrTask, mqttTask);
-
-        _logger.LogInformation("AMR/MQTT 연결 완료 — 상태 변경 감지 시 퍼블리시 시작 (1초 폴링)");
-
         AmrStatusMessage? previousStatus = null;
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                // AMR 연결이 끊어진 경우 재연결 시도
-                if (!_amrService.IsConnected)
-                {
-                    _logger.LogWarning("AMR Modbus TCP 연결 끊김 — 재연결 시도");
-                    await _amrService.ConnectAsync(stoppingToken);
-                    _logger.LogInformation("AMR Modbus TCP 재연결 완료");
-                    previousStatus = null;
-                }
-
-                // AMR 상태 읽기 및 MQTT 발행
+                // AMR + MQTT 모두 연결된 경우에만 상태 퍼블리시
                 if (_amrService.IsConnected && _mqttService.IsConnected)
                 {
                     var robotStatus = await _amrService.ReadStatusAsync(stoppingToken);
@@ -82,47 +52,10 @@ public class MainSequenceService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "AMR 메인 루프 실패");
+                _logger.LogWarning(ex, "메인 루프 실패");
             }
 
             await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken);
-        }
-    }
-
-    public override async Task StopAsync(CancellationToken cancellationToken)
-    {
-        _logger.LogInformation("MainSequenceService 종료 중...");
-
-        await _mqttService.DisconnectAsync();
-        _amrService.Disconnect();
-        _cobotService.Disconnect();
-
-        await base.StopAsync(cancellationToken);
-
-        _logger.LogInformation("MainSequenceService 종료 완료");
-    }
-
-    private async Task ConnectWithRetryAsync(
-        string serviceName,
-        Func<bool> isConnected,
-        Func<CancellationToken, Task> connectAsync,
-        CancellationToken ct)
-    {
-        while (!isConnected() && !ct.IsCancellationRequested)
-        {
-            try
-            {
-                await connectAsync(ct);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "{ServiceName} 연결 실패. 5초 후 재시도합니다.", serviceName);
-                await Task.Delay(TimeSpan.FromSeconds(5), ct);
-            }
         }
     }
 }

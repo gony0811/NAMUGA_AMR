@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using AMR.Enums;
 using AMR.Models;
+using Microsoft.Extensions.Logging;
 using NModbus;
 
 namespace AMR.Communication;
@@ -11,15 +12,17 @@ namespace AMR.Communication;
 public class AmrModbusTcpClient : IDisposable
 {
     private readonly AmrModbusTcpSettings _settings;
+    private readonly ILogger<AmrModbusTcpClient> _logger;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
 
     private TcpClient? _tcpClient;
     private IModbusMaster? _master;
     private bool _disposed;
 
-    public AmrModbusTcpClient(AmrModbusTcpSettings settings)
+    public AmrModbusTcpClient(AmrModbusTcpSettings settings, ILogger<AmrModbusTcpClient> logger)
     {
         _settings = settings;
+        _logger = logger;
     }
 
     /// <summary>로봇 연결 상태</summary>

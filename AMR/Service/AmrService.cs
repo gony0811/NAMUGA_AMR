@@ -1,14 +1,15 @@
 using AMR.Communication;
 using AMR.Enums;
 using AMR.Models;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace AMR.Service;
 
 /// <summary>
-/// AMR Modbus TCP 통신 서비스 — 로봇 상태 읽기 및 명령 전달 함수 집합
+/// AMR Modbus TCP 통신 서비스 — 자동 연결/재연결 + 로봇 상태 읽기 및 명령 전달
 /// </summary>
-public class AmrService
+public class AmrService : BackgroundService
 {
     private readonly AmrModbusTcpClient _modbusClient;
     private readonly ILogger<AmrService> _logger;
@@ -22,23 +23,43 @@ public class AmrService
     /// <summary>Modbus TCP 연결 상태</summary>
     public bool IsConnected => _modbusClient.IsConnected;
 
-    #region 연결 관리
-
-    /// <summary>Modbus TCP 연결</summary>
-    public async Task ConnectAsync(CancellationToken ct = default)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await _modbusClient.ConnectAsync(ct);
-        _logger.LogInformation("AMR Modbus TCP 연결 완료");
+        _logger.LogInformation("AmrService 시작");
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                if (!IsConnected)
+                {
+                    _logger.LogWarning("AMR Modbus TCP 연결 시도");
+                    await _modbusClient.ConnectAsync(stoppingToken);
+                    _logger.LogInformation("AMR Modbus TCP 연결 완료");
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "AMR Modbus TCP 연결 실패 — 5초 후 재시도");
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+        }
     }
 
-    /// <summary>Modbus TCP 연결 해제</summary>
-    public void Disconnect()
+    public override Task StopAsync(CancellationToken cancellationToken)
     {
         _modbusClient.Disconnect();
-        _logger.LogInformation("AMR Modbus TCP 연결 해제");
+        _logger.LogInformation("AmrService 종료");
+        return base.StopAsync(cancellationToken);
     }
 
-    #endregion
+    /// <summary>연결 해제 (설정 변경 시 재연결 트리거용)</summary>
+    public void Disconnect() => _modbusClient.Disconnect();
 
     #region 상태 읽기
 

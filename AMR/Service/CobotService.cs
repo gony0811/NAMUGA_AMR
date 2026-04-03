@@ -1,13 +1,14 @@
 using AMR.Communication;
 using AMR.Models;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace AMR.Service;
 
 /// <summary>
-/// Cobot Modbus TCP 통신 서비스 — 로봇 상태 읽기 및 제어 명령 전달
+/// Cobot Modbus TCP 통신 서비스 — 자동 연결/재연결 + 로봇 상태 읽기 및 제어 명령 전달
 /// </summary>
-public class CobotService
+public class CobotService : BackgroundService
 {
     private readonly CobotModbusTcpClient _modbusClient;
     private readonly ILogger<CobotService> _logger;
@@ -21,30 +22,40 @@ public class CobotService
     /// <summary>Modbus TCP 연결 상태</summary>
     public bool IsConnected => _modbusClient.IsConnected;
 
-    #region 연결 관리
-
-    /// <summary>Modbus TCP 연결</summary>
-    public async Task ConnectAsync(CancellationToken ct = default)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await _modbusClient.ConnectAsync(ct);
-        _logger.LogInformation("Cobot Modbus TCP 연결 완료");
+        _logger.LogInformation("CobotService 시작");
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                if (!IsConnected)
+                {
+                    _logger.LogWarning("Cobot Modbus TCP 연결 시도");
+                    await _modbusClient.ConnectAsync(stoppingToken);
+                    _logger.LogInformation("Cobot Modbus TCP 연결 완료");
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Cobot Modbus TCP 연결 실패 — 5초 후 재시도");
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+        }
     }
 
-    /// <summary>Modbus TCP 연결 해제</summary>
-    public void Disconnect()
+    public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        _modbusClient.Disconnect();
-        _logger.LogInformation("Cobot Modbus TCP 연결 해제");
+        await _modbusClient.DisconnectAsync(cancellationToken);
+        _logger.LogInformation("CobotService 종료");
+        await base.StopAsync(cancellationToken);
     }
-
-    /// <summary>Modbus TCP 연결 해제 (진행 중 작업 완료 대기)</summary>
-    public async Task DisconnectAsync(CancellationToken ct = default)
-    {
-        await _modbusClient.DisconnectAsync(ct);
-        _logger.LogInformation("Cobot Modbus TCP 연결 해제");
-    }
-
-    #endregion
 
     #region 상태 읽기
 
@@ -65,11 +76,11 @@ public class CobotService
         => _modbusClient.RecoveryAsync(ct);
 
     /// <summary>시작</summary>
-    public Task StartAsync(CancellationToken ct = default)
+    public Task RunJobAsync(CancellationToken ct = default)
         => _modbusClient.StartAsync(ct);
 
     /// <summary>정지</summary>
-    public Task StopAsync(CancellationToken ct = default)
+    public Task StopJobAsync(CancellationToken ct = default)
         => _modbusClient.StopAsync(ct);
 
     /// <summary>원점 이동</summary>

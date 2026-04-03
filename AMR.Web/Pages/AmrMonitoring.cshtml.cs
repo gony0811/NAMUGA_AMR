@@ -12,10 +12,12 @@ public class AmrMonitoringModel : PageModel
     private static readonly object _lock = new();
 
     private readonly AmrModbusTcpSettings _defaultSettings;
+    private readonly ILoggerFactory _loggerFactory;
 
-    public AmrMonitoringModel(AmrModbusTcpSettings defaultSettings)
+    public AmrMonitoringModel(AmrModbusTcpSettings defaultSettings, ILoggerFactory loggerFactory)
     {
         _defaultSettings = defaultSettings;
+        _loggerFactory = loggerFactory;
     }
 
     public bool IsConnected => _client?.IsConnected ?? false;
@@ -43,11 +45,11 @@ public class AmrMonitoringModel : PageModel
                     Port = request.Port,
                     SlaveId = request.SlaveId
                 };
-                _client = new AmrModbusTcpClient(settings);
+                _client = new AmrModbusTcpClient(settings, _loggerFactory.CreateLogger<AmrModbusTcpClient>());
             }
-
             await _client!.ConnectAsync();
             return new JsonResult(new { success = true });
+
         }
         catch (Exception ex)
         {

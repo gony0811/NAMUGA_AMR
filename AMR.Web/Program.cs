@@ -4,8 +4,13 @@ using AMR.Service;
 using AMR.Web.Services;
 using Autofac;
 using Autofac.Extensions.DependencyInjection;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Serilog 설정
+builder.Host.UseSerilog((context, configuration) =>
+    configuration.ReadFrom.Configuration(context.Configuration));
 
 // Autofac을 DI 컨테이너로 사용
 builder.Host.UseServiceProviderFactory(new AutofacServiceProviderFactory());
@@ -76,6 +81,9 @@ builder.Host.ConfigureContainer<ContainerBuilder>(containerBuilder =>
 });
 
 // BackgroundService 등록
+builder.Services.AddHostedService(sp => sp.GetRequiredService<AmrService>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<CobotService>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<MqttService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MainSequenceService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CameraService>());
 

@@ -89,6 +89,23 @@ public class AmrMqttClient : IDisposable
         await _mqttClient.PublishAsync(message, ct);
     }
 
+    /// <summary>Heartbeat 메시지를 MQTT로 퍼블리시한다.</summary>
+    public async Task PublishHeartbeatAsync(CancellationToken ct = default)
+    {
+        if (!_mqttClient.IsConnected)
+            return;
+
+        var payload = JsonSerializer.Serialize(new { timestamp = DateTimeOffset.Now.ToString("o") }, _jsonOptions);
+
+        var message = new MqttApplicationMessageBuilder()
+            .WithTopic($"amr/{_settings.ClientId}/heartbeat")
+            .WithPayload(payload)
+            .WithQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtMostOnce)
+            .Build();
+
+        await _mqttClient.PublishAsync(message, ct);
+    }
+
     /// <summary>명령 응답을 MQTT로 퍼블리시한다.</summary>
     public async Task PublishReplyAsync(CommandReply reply, CancellationToken ct = default)
     {

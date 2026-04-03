@@ -1,5 +1,4 @@
 using AMR.Communication;
-using AMR.Service;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
@@ -8,21 +7,20 @@ namespace AMR.Web.Pages;
 [IgnoreAntiforgeryToken]
 public class CobotMonitoringModel : PageModel
 {
-    private readonly CobotService _cobotService;
-    private readonly CobotModbusTcpClient _modbusClient;
+    private static CobotModbusTcpClient? _client;
+    private static readonly object _lock = new();
     private readonly CobotModbusTcpSettings _defaultSettings;
+    private readonly ILoggerFactory _loggerFactory;
 
     public CobotMonitoringModel(
-        CobotService cobotService,
-        CobotModbusTcpClient modbusClient,
-        CobotModbusTcpSettings defaultSettings)
+        CobotModbusTcpSettings defaultSettings,
+        ILoggerFactory loggerFactory)
     {
-        _cobotService = cobotService;
-        _modbusClient = modbusClient;
         _defaultSettings = defaultSettings;
+        _loggerFactory = loggerFactory;
     }
 
-    public bool IsConnected => _cobotService.IsConnected;
+    public bool IsConnected => _client.IsConnected;
     public string DefaultIp => _defaultSettings.IpAddress;
     public int DefaultPort => _defaultSettings.Port;
     public byte DefaultSlaveId => _defaultSettings.SlaveId;
@@ -33,11 +31,28 @@ public class CobotMonitoringModel : PageModel
     {
         try
         {
-            // 기존 연결이 있으면 먼저 해제
-            if (_cobotService.IsConnected)
-                await _cobotService.DisconnectAsync();
+            lock (_lock)
+            {
+                if (_client is { IsConnected: true })
+                {
+                    _client.Disconnect();
+                    _client.Dispose();
+                }
 
-            await _cobotService.ConnectAsync();
+                var settings = new CobotModbusTcpSettings
+                {
+                    IpAddress = request.IpAddress,
+                    Port = request.Port,
+                    SlaveId = request.SlaveId
+                };
+                
+                _client = new CobotModbusTcpClient(settings, _loggerFactory.CreateLogger<CobotModbusTcpClient>());
+            }
+            // 기존 연결이 있으면 먼저 해제
+            if (_client.IsConnected)
+                await _client.DisconnectAsync();
+
+            await _client!.ConnectAsync();
             return new JsonResult(new { success = true });
         }
         catch (Exception ex)
@@ -50,7 +65,7 @@ public class CobotMonitoringModel : PageModel
     {
         try
         {
-            await _cobotService.DisconnectAsync();
+            await _client!.DisconnectAsync();
             return new JsonResult(new { success = true });
         }
         catch (Exception ex)
@@ -61,7 +76,7 @@ public class CobotMonitoringModel : PageModel
 
     public IActionResult OnGetConnectionStatus()
     {
-        return new JsonResult(new { connected = _cobotService.IsConnected });
+        return new JsonResult(new { connected = _client!.IsConnected });
     }
 
     /// <summary>Cobot 상태 읽기 (Input Register 310~322)</summary>
@@ -69,10 +84,10 @@ public class CobotMonitoringModel : PageModel
     {
         try
         {
-            if (!_cobotService.IsConnected)
+            if (!_client!.IsConnected)
                 return new JsonResult(new { success = false, error = "연결되지 않음" });
 
-            var status = await _cobotService.ReadStatusAsync();
+            var status = await _client!.ReadCobotStatusAsync();
 
             return new JsonResult(new
             {
@@ -119,37 +134,37 @@ public class CobotMonitoringModel : PageModel
     {
         try
         {
-            if (!_cobotService.IsConnected)
+            if (!_client!.IsConnected)
                 return new JsonResult(new { success = false, error = "연결되지 않음" });
 
             switch (request.Command)
             {
                 case "Pause":
-                    await _modbusClient.PauseAsync();
+                    await _client!.PauseAsync();
                     break;
                 case "Recovery":
-                    await _modbusClient.RecoveryAsync();
+                    await _client!.RecoveryAsync();
                     break;
                 case "Start":
-                    await _modbusClient.StartAsync();
+                    await _client!.StartAsync();
                     break;
                 case "Stop":
-                    await _modbusClient.StopAsync();
+                    await _client!.StopAsync();
                     break;
                 case "MoveToJobOrigin":
-                    await _modbusClient.MoveToJobOriginAsync();
+                    await _client!.MoveToJobOriginAsync();
                     break;
                 case "ManualAutoSwitch":
-                    await _modbusClient.ManualAutoSwitchAsync();
+                    await _client!.ManualAutoSwitchAsync();
                     break;
                 case "StartMainProgram":
-                    await _modbusClient.StartMainProgramAsync();
+                    await _client!.StartMainProgramAsync();
                     break;
                 case "ClearAllFaults":
-                    await _modbusClient.ClearAllFaultsAsync();
+                    await _client!.ClearAllFaultsAsync();
                     break;
                 case "WriteDI":
-                    await _modbusClient.WriteDigitalInputAsync(request.Index, request.Value);
+                    await _client!.WriteDigitalInputAsync(request.Index, request.Value);
                     break;
                 default:
                     return new JsonResult(new { success = false, error = $"알 수 없는 명령: {request.Command}" });
@@ -168,10 +183,10 @@ public class CobotMonitoringModel : PageModel
     {
         try
         {
-            if (!_cobotService.IsConnected)
+            if (!_client!.IsConnected)
                 return new JsonResult(new { success = false, error = "연결되지 않음" });
 
-            await _modbusClient.WriteAnalogInputAsync(request.Index, request.Value);
+            await _client!.WriteAnalogInputAsync(request.Index, request.Value);
             return new JsonResult(new { success = true });
         }
         catch (Exception ex)
@@ -185,10 +200,10 @@ public class CobotMonitoringModel : PageModel
     {
         try
         {
-            if (!_cobotService.IsConnected)
+            if (!_client!.IsConnected)
                 return new JsonResult(new { success = false, error = "연결되지 않음" });
 
-            var coils = await _modbusClient.ReadRawCoilsAsync(CobotRegisterMap.Coil.Pause, 11);
+            var coils = await _client!.ReadRawCoilsAsync(CobotRegisterMap.Coil.Pause, 11);
             var result = new object[11];
             var names = new Dictionary<int, string>
             {
@@ -218,10 +233,10 @@ public class CobotMonitoringModel : PageModel
     {
         try
         {
-            if (!_cobotService.IsConnected)
+            if (!_client!.IsConnected)
                 return new JsonResult(new { success = false, error = "연결되지 않음" });
 
-            var inputs = await _modbusClient.ReadRawDiscreteInputsAsync(
+            var inputs = await _client!.ReadRawDiscreteInputsAsync(
                 CobotRegisterMap.DiscreteInput.DigitalOutputStart,
                 CobotRegisterMap.DiscreteInput.DigitalOutputCount);
 
@@ -242,17 +257,17 @@ public class CobotMonitoringModel : PageModel
     {
         try
         {
-            if (!_cobotService.IsConnected)
+            if (!_client!.IsConnected)
                 return new JsonResult(new { success = false, error = "연결되지 않음" });
 
-            var aoRegs = await _modbusClient.ReadRawInputRegistersAsync(
+            var aoRegs = await _client!.ReadRawInputRegistersAsync(
                 CobotRegisterMap.Input.AnalogOutputStart,
                 CobotRegisterMap.Input.AnalogOutputCount);
             var aoResult = new object[32];
             for (int i = 0; i < 32; i++)
                 aoResult[i] = new { index = i, address = 100 + i, value = aoRegs[i], hex = $"0x{aoRegs[i]:X4}" };
 
-            var statusRegs = await _modbusClient.ReadRawInputRegistersAsync(
+            var statusRegs = await _client!.ReadRawInputRegistersAsync(
                 CobotRegisterMap.Input.StatusStart,
                 CobotRegisterMap.Input.StatusCount);
             var statusResult = new object[13];
@@ -272,7 +287,7 @@ public class CobotMonitoringModel : PageModel
     {
         try
         {
-            if (!_cobotService.IsConnected)
+            if (!_client!.IsConnected)
                 return new JsonResult(new { success = false, error = "연결되지 않음" });
 
             var nonZeroInputs = new List<object>();
@@ -283,7 +298,7 @@ public class CobotMonitoringModel : PageModel
                 try
                 {
                     var count = (ushort)Math.Min(125, 1000 - start);
-                    var regs = await _modbusClient.ReadRawInputRegistersAsync(start, count);
+                    var regs = await _client!.ReadRawInputRegistersAsync(start, count);
                     for (int i = 0; i < regs.Length; i++)
                     {
                         if (regs[i] != 0)
@@ -298,7 +313,7 @@ public class CobotMonitoringModel : PageModel
                 try
                 {
                     var count = (ushort)Math.Min(125, 1000 - start);
-                    var regs = await _modbusClient.ReadRawHoldingRegistersAsync(start, count);
+                    var regs = await _client!.ReadRawHoldingRegistersAsync(start, count);
                     for (int i = 0; i < regs.Length; i++)
                     {
                         if (regs[i] != 0)
@@ -326,10 +341,10 @@ public class CobotMonitoringModel : PageModel
     {
         try
         {
-            if (!_cobotService.IsConnected)
+            if (!_client!.IsConnected)
                 return new JsonResult(new { success = false, error = "연결되지 않음" });
 
-            var coils = await _modbusClient.ReadRawCoilsAsync(
+            var coils = await _client!.ReadRawCoilsAsync(
                 CobotRegisterMap.Coil.DigitalInputStart,
                 CobotRegisterMap.Coil.DigitalInputCount);
 
@@ -350,10 +365,10 @@ public class CobotMonitoringModel : PageModel
     {
         try
         {
-            if (!_cobotService.IsConnected)
+            if (!_client!.IsConnected)
                 return new JsonResult(new { success = false, error = "연결되지 않음" });
 
-            var regs = await _modbusClient.ReadRawHoldingRegistersAsync(
+            var regs = await _client!.ReadRawHoldingRegistersAsync(
                 CobotRegisterMap.Holding.AnalogInputStart,
                 CobotRegisterMap.Holding.AnalogInputCount);
             var result = new object[32];
