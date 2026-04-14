@@ -1,9 +1,11 @@
 using AMR;
 using AMR.Communication;
+using AMR.Data;
 using AMR.Service;
 using AMR.Web.Services;
 using Autofac;
 using Autofac.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -89,10 +91,24 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<MqttService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MainSequenceService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CameraService>());
 
+// SQLite 데이터베이스 설정
+var connectionString = "Data Source=amr.db";
+builder.Services.AddDbContext<AmrDbContext>(options =>
+    options.UseSqlite(connectionString));
+builder.Services.AddDbContextFactory<AmrDbContext>(options =>
+    options.UseSqlite(connectionString));
+
 // Add services to the container.
 builder.Services.AddRazorPages();
 
 var app = builder.Build();
+
+// 데이터베이스 마이그레이션 자동 적용
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AmrDbContext>();
+    db.Database.Migrate();
+}
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

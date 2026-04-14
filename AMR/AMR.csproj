@@ -8,6 +8,11 @@
 
     <ItemGroup>
       <PackageReference Include="Autofac" Version="9.1.0" />
+      <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.12" />
+      <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.12">
+        <PrivateAssets>all</PrivateAssets>
+        <IncludeAssets>runtime; build; buildtransitive; contentfiles; analyzers</IncludeAssets>
+      </PackageReference>
       <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.5" />
       <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
       <PackageReference Include="MQTTnet" Version="4.3.7.1207" />

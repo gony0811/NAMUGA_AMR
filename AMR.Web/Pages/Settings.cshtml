@@ -132,8 +132,183 @@
             </button>
         </div>
     </form>
+
+    <h4 class="mt-4 mb-3">위치 태그 매핑</h4>
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">위치 태그 → Task/Job 매핑</h5>
+                    <button type="button" class="btn btn-sm btn-success" id="btnAddMapping">
+                        <i class="bi bi-plus-lg"></i> 추가
+                    </button>
+                </div>
+                <div class="card-body">
+                    <table class="table table-bordered table-hover mb-0" id="mappingTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>위치 태그</th>
+                                <th style="width:120px">Task Index</th>
+                                <th style="width:120px">Job Index</th>
+                                <th>설명</th>
+                                <th style="width:220px">작업</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mappingBody">
+                        </tbody>
+                    </table>
+                    <div id="noMappingMsg" class="text-muted text-center py-3" style="display:none;">
+                        등록된 매핑이 없습니다. "추가" 버튼을 눌러 매핑을 등록하세요.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
+    <script>
+        $(function () {
+            loadMappings();
+
+            $('#btnAddMapping').click(function () {
+                addEditRow({ id: 0, locationTag: '', taskIndex: 0, jobIndex: 0, description: '' });
+            });
+        });
+
+        function loadMappings() {
+            $.getJSON('/Settings?handler=GetMappings', function (data) {
+                $('#mappingBody').empty();
+                if (data.length === 0) {
+                    $('#noMappingMsg').show();
+                } else {
+                    $('#noMappingMsg').hide();
+                    data.forEach(function (m) {
+                        addDisplayRow(m);
+                    });
+                }
+            });
+        }
+
+        function addDisplayRow(m) {
+            var row = $('<tr data-id="' + m.id + '"></tr>');
+            row.append('<td>' + escapeHtml(m.locationTag) + '</td>');
+            row.append('<td>' + m.taskIndex + '</td>');
+            row.append('<td>' + m.jobIndex + '</td>');
+            row.append('<td>' + escapeHtml(m.description || '') + '</td>');
+            row.append(
+                '<td>' +
+                '<button class="btn btn-sm btn-outline-success me-1 btn-execute"><i class="bi bi-play-fill"></i> 실행</button>' +
+                '<button class="btn btn-sm btn-outline-primary me-1 btn-edit"><i class="bi bi-pencil"></i> 수정</button>' +
+                '<button class="btn btn-sm btn-outline-danger btn-delete"><i class="bi bi-trash"></i> 삭제</button>' +
+                '</td>'
+            );
+
+            row.find('.btn-execute').click(function () {
+                if (!confirm(m.locationTag + ' 매핑을 실행하시겠습니까? (Task=' + m.taskIndex + ', Job=' + m.jobIndex + ')')) return;
+                var btn = $(this);
+                btn.prop('disabled', true).html('<i class="bi bi-hourglass-split"></i> 실행중...');
+                $.ajax({
+                    url: '/Settings?handler=ExecuteMapping',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    headers: { 'RequestVerificationToken': $('input[name="__RequestVerificationToken"]').val() },
+                    data: JSON.stringify({ id: m.id }),
+                    success: function (res) {
+                        alert(res.message);
+                        btn.prop('disabled', false).html('<i class="bi bi-play-fill"></i> 실행');
+                    },
+                    error: function () {
+                        alert('실행 요청에 실패했습니다.');
+                        btn.prop('disabled', false).html('<i class="bi bi-play-fill"></i> 실행');
+                    }
+                });
+            });
+
+            row.find('.btn-edit').click(function () {
+                row.remove();
+                addEditRow(m);
+            });
+
+            row.find('.btn-delete').click(function () {
+                if (!confirm('이 매핑을 삭제하시겠습니까?')) return;
+                $.ajax({
+                    url: '/Settings?handler=DeleteMapping',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    headers: { 'RequestVerificationToken': $('input[name="__RequestVerificationToken"]').val() },
+                    data: JSON.stringify({ id: m.id }),
+                    success: function () { loadMappings(); },
+                    error: function () { alert('삭제에 실패했습니다.'); }
+                });
+            });
+
+            $('#mappingBody').append(row);
+            $('#noMappingMsg').hide();
+        }
+
+        function addEditRow(m) {
+            var row = $('<tr class="table-warning"></tr>');
+            row.append('<td><input type="text" class="form-control form-control-sm" value="' + escapeAttr(m.locationTag) + '" id="editTag" maxlength="50" placeholder="예: N0001" /></td>');
+            row.append('<td><input type="number" class="form-control form-control-sm" value="' + m.taskIndex + '" id="editTask" min="0" max="65535" /></td>');
+            row.append('<td><input type="number" class="form-control form-control-sm" value="' + m.jobIndex + '" id="editJob" min="0" max="65535" /></td>');
+            row.append('<td><input type="text" class="form-control form-control-sm" value="' + escapeAttr(m.description || '') + '" id="editDesc" maxlength="200" /></td>');
+            row.append(
+                '<td>' +
+                '<button class="btn btn-sm btn-primary me-1 btn-save"><i class="bi bi-check-lg"></i></button>' +
+                '<button class="btn btn-sm btn-secondary btn-cancel"><i class="bi bi-x-lg"></i></button>' +
+                '</td>'
+            );
+
+            row.find('.btn-save').click(function () {
+                var payload = {
+                    id: m.id,
+                    locationTag: row.find('#editTag').val().trim(),
+                    taskIndex: parseInt(row.find('#editTask').val()) || 0,
+                    jobIndex: parseInt(row.find('#editJob').val()) || 0,
+                    description: row.find('#editDesc').val().trim() || null
+                };
+
+                if (!payload.locationTag) {
+                    alert('위치 태그를 입력하세요.');
+                    return;
+                }
+
+                $.ajax({
+                    url: '/Settings?handler=SaveMapping',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    headers: { 'RequestVerificationToken': $('input[name="__RequestVerificationToken"]').val() },
+                    data: JSON.stringify(payload),
+                    success: function (res) {
+                        if (res.success) {
+                            loadMappings();
+                        } else {
+                            alert(res.message || '저장에 실패했습니다.');
+                        }
+                    },
+                    error: function () { alert('저장에 실패했습니다.'); }
+                });
+            });
+
+            row.find('.btn-cancel').click(function () {
+                loadMappings();
+            });
+
+            $('#mappingBody').append(row);
+            $('#noMappingMsg').hide();
+            row.find('#editTag').focus();
+        }
+
+        function escapeHtml(str) {
+            var div = document.createElement('div');
+            div.appendChild(document.createTextNode(str));
+            return div.innerHTML;
+        }
+
+        function escapeAttr(str) {
+            return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+    </script>
 }

@@ -5,7 +5,9 @@
       "Read(//c/Users/sean0/.nuget/packages/opencvsharp4.runtime.win/4.13.0.20260302/runtimes/win-x64/native/**)",
       "Read(//c/Users/sean0/.nuget/packages/opencvsharp4.runtime.win/**)",
       "WebSearch",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(dotnet tool:*)",
+      "Bash(dotnet ef migrations:*)"
     ]
   }
 }
