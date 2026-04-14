@@ -67,7 +67,7 @@ AMR과 ACS 간 MQTT 통신 인터페이스 정의서
     "type": "CHARGING_FAIL",
     "node": "N0001",
     "timestamp": "2026-03-25T16:05:05Z"
-  } 
+  }
 }
 ```
 
