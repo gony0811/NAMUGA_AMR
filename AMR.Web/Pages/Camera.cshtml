@@ -101,6 +101,18 @@
                             <td><strong>Delta (px)</strong></td>
                             <td id="qrDelta" class="text-muted">-</td>
                         </tr>
+                        <tr class="table-info">
+                            <td><strong>Depth (mm)</strong></td>
+                            <td id="qrDepth" class="text-muted">-</td>
+                        </tr>
+                        <tr class="table-info">
+                            <td><strong>Real Delta (mm)</strong></td>
+                            <td id="qrRealDelta" class="text-muted">-</td>
+                        </tr>
+                        <tr class="table-info">
+                            <td><strong>Real Distance (mm)</strong></td>
+                            <td id="qrRealDist" class="text-muted">-</td>
+                        </tr>
                         <tr>
                             <td><strong>감지 시각</strong></td>
                             <td id="qrTime" class="text-muted">-</td>
@@ -111,39 +123,55 @@
         </div>
         <div class="col-md-6">
             <div class="card">
-                <div class="card-header py-2">
-                    <strong>Offset & Final Movement</strong>
+                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                    <strong>QR Teaching Position</strong>
+                    <span id="teachBadge" class="badge bg-secondary">미설정</span>
                 </div>
                 <div class="card-body py-2">
-                    <div class="row g-2 mb-2">
-                        <div class="col-4">
-                            <label class="form-label form-label-sm mb-0"><strong>Offset X (px)</strong></label>
-                            <input type="number" id="offsetX" class="form-control form-control-sm" value="0" step="0.1" />
-                        </div>
-                        <div class="col-4">
-                            <label class="form-label form-label-sm mb-0"><strong>Offset Y (px)</strong></label>
-                            <input type="number" id="offsetY" class="form-control form-control-sm" value="0" step="0.1" />
-                        </div>
-                        <div class="col-4">
-                            <label class="form-label form-label-sm mb-0"><strong>Offset Angle (&deg;)</strong></label>
-                            <input type="number" id="offsetAngle" class="form-control form-control-sm" value="0" step="0.1" />
-                        </div>
+                    <div class="d-flex gap-2 mb-2">
+                        <button id="btnSaveTeaching" class="btn btn-sm btn-primary">Teaching 저장</button>
+                        <button id="btnClearTeaching" class="btn btn-sm btn-outline-danger">초기화</button>
                     </div>
-                    <hr class="my-2" />
+                    <div id="teachError" class="alert alert-danger py-1 mb-2 small" style="display:none;"></div>
+
                     <table class="table table-sm table-borderless mb-0">
-                        <tr>
-                            <td style="width: 140px;"><strong>최종 이동 좌표</strong></td>
-                            <td id="finalCoord" class="text-muted">-</td>
-                        </tr>
-                        <tr>
-                            <td><strong>최종 이동 각도</strong></td>
-                            <td id="finalAngle" class="text-muted">-</td>
-                        </tr>
-                        <tr>
-                            <td><strong>이동 거리 (px)</strong></td>
-                            <td id="finalDist" class="text-muted">-</td>
-                        </tr>
+                        <thead>
+                            <tr class="table-light">
+                                <td style="width: 140px;"></td>
+                                <td><strong>X (mm)</strong></td>
+                                <td><strong>Y (mm)</strong></td>
+                                <td><strong>Depth (mm)</strong></td>
+                                <td><strong>Angle (&deg;)</strong></td>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="table-success">
+                                <td><strong>Teaching</strong></td>
+                                <td id="teachX" class="text-muted">-</td>
+                                <td id="teachY" class="text-muted">-</td>
+                                <td id="teachDepth" class="text-muted">-</td>
+                                <td id="teachAngle" class="text-muted">-</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Current</strong></td>
+                                <td id="curX" class="text-muted">-</td>
+                                <td id="curY" class="text-muted">-</td>
+                                <td id="curDepth" class="text-muted">-</td>
+                                <td id="curAngle" class="text-muted">-</td>
+                            </tr>
+                            <tr class="table-warning">
+                                <td><strong>Offset (Cobot 보정)</strong></td>
+                                <td id="offX" class="text-muted">-</td>
+                                <td id="offY" class="text-muted">-</td>
+                                <td id="offDepth" class="text-muted">-</td>
+                                <td id="offAngle" class="text-muted">-</td>
+                            </tr>
+                        </tbody>
                     </table>
+                    <div class="small text-muted mt-1">
+                        <span id="teachQrText"></span>
+                        <span id="teachTime"></span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -254,10 +282,10 @@
             var $qrAngle = $('#qrAngle');
             var $frameCenter = $('#frameCenter');
             var $qrDelta = $('#qrDelta');
+            var $qrDepth = $('#qrDepth');
+            var $qrRealDelta = $('#qrRealDelta');
+            var $qrRealDist = $('#qrRealDist');
             var $qrTime = $('#qrTime');
-            var $finalCoord = $('#finalCoord');
-            var $finalAngle = $('#finalAngle');
-            var $finalDist = $('#finalDist');
 
             function checkQrStatus() {
                 $.getJSON('/Camera?handler=QrStatus', function (data) {
@@ -268,21 +296,14 @@
                         $qrAngle.removeClass('text-muted').text(data.rotationAngle + '\u00B0');
                         $frameCenter.removeClass('text-muted').text('X: ' + data.frameCenterX + ',  Y: ' + data.frameCenterY);
                         $qrDelta.removeClass('text-muted').text('dX: ' + data.deltaX + ',  dY: ' + data.deltaY);
+                        $qrDepth.removeClass('text-muted').text(data.depthMm > 0 ? data.depthMm.toFixed(1) : 'N/A');
+                        $qrRealDelta.removeClass('text-muted').text(data.depthMm > 0
+                            ? 'dX: ' + data.realDeltaXMm.toFixed(1) + ',  dY: ' + data.realDeltaYMm.toFixed(1)
+                            : 'N/A (Depth 필요)');
+                        $qrRealDist.removeClass('text-muted').text(data.depthMm > 0
+                            ? data.realDistanceMm.toFixed(1)
+                            : 'N/A');
                         $qrTime.removeClass('text-muted').text(data.detectedAt);
-
-                        // Offset 적용하여 최종 이동 좌표 계산
-                        var offX = parseFloat($('#offsetX').val()) || 0;
-                        var offY = parseFloat($('#offsetY').val()) || 0;
-                        var offAngle = parseFloat($('#offsetAngle').val()) || 0;
-
-                        var finalX = data.deltaX + offX;
-                        var finalY = data.deltaY + offY;
-                        var finalA = data.rotationAngle + offAngle;
-                        var dist = Math.sqrt(finalX * finalX + finalY * finalY);
-
-                        $finalCoord.removeClass('text-muted').text('X: ' + finalX.toFixed(1) + ',  Y: ' + finalY.toFixed(1));
-                        $finalAngle.removeClass('text-muted').text(finalA.toFixed(1) + '\u00B0');
-                        $finalDist.removeClass('text-muted').text(dist.toFixed(1));
                     } else {
                         $qrBadge.removeClass('bg-success').addClass('bg-secondary').text('감지 안됨');
                         $qrText.addClass('text-muted').text('-');
@@ -290,15 +311,103 @@
                         $qrAngle.addClass('text-muted').text('-');
                         $frameCenter.addClass('text-muted').text('-');
                         $qrDelta.addClass('text-muted').text('-');
+                        $qrDepth.addClass('text-muted').text('-');
+                        $qrRealDelta.addClass('text-muted').text('-');
+                        $qrRealDist.addClass('text-muted').text('-');
                         $qrTime.addClass('text-muted').text('-');
-                        $finalCoord.addClass('text-muted').text('-');
-                        $finalAngle.addClass('text-muted').text('-');
-                        $finalDist.addClass('text-muted').text('-');
                     }
                 });
             }
 
             setInterval(checkQrStatus, 500);
+
+            // ── Teaching Position ──
+            var $teachBadge = $('#teachBadge');
+
+            $('#btnSaveTeaching').on('click', function () {
+                var $btn = $(this);
+                $btn.prop('disabled', true);
+                $('#teachError').hide();
+                $.post('/Camera?handler=SaveTeaching', {}, function (res) {
+                    if (res.success) {
+                        updateTeachingDisplay(res);
+                        $teachBadge.removeClass('bg-secondary').addClass('bg-success').text('Teaching 완료');
+                    } else {
+                        $('#teachError').text(res.error).show();
+                    }
+                }).fail(function () {
+                    $('#teachError').text('요청 실패').show();
+                }).always(function () {
+                    $btn.prop('disabled', false);
+                });
+            });
+
+            $('#btnClearTeaching').on('click', function () {
+                $.post('/Camera?handler=ClearTeaching', {}, function () {
+                    $('#teachX, #teachY, #teachDepth, #teachAngle').addClass('text-muted').text('-');
+                    $('#curX, #curY, #curDepth, #curAngle').addClass('text-muted').text('-');
+                    $('#offX, #offY, #offDepth, #offAngle').addClass('text-muted').text('-');
+                    $('#teachQrText, #teachTime').text('');
+                    $teachBadge.removeClass('bg-success').addClass('bg-secondary').text('미설정');
+                });
+            });
+
+            function updateTeachingDisplay(t) {
+                $('#teachX').removeClass('text-muted').text(t.x.toFixed(1));
+                $('#teachY').removeClass('text-muted').text(t.y.toFixed(1));
+                $('#teachDepth').removeClass('text-muted').text(t.depthMm.toFixed(1));
+                $('#teachAngle').removeClass('text-muted').text(t.angle.toFixed(1));
+                $('#teachQrText').text('QR: ' + t.qrText);
+                $('#teachTime').text('  |  ' + t.taughtAt);
+            }
+
+            function checkTeachingStatus() {
+                $.getJSON('/Camera?handler=TeachingStatus', function (data) {
+                    var t = data.teaching;
+                    var o = data.offset;
+
+                    if (t.isTaught) {
+                        $teachBadge.removeClass('bg-secondary').addClass('bg-success').text('Teaching 완료');
+                        $('#teachX').removeClass('text-muted').text(t.x.toFixed(1));
+                        $('#teachY').removeClass('text-muted').text(t.y.toFixed(1));
+                        $('#teachDepth').removeClass('text-muted').text(t.depthMm.toFixed(1));
+                        $('#teachAngle').removeClass('text-muted').text(t.angle.toFixed(1));
+                        $('#teachQrText').text('QR: ' + t.qrText);
+                        $('#teachTime').text('  |  ' + t.taughtAt);
+                    }
+
+                    if (o.hasCurrent) {
+                        var qr = lastQrData;
+                        if (qr) {
+                            $('#curX').removeClass('text-muted').text(qr.realDeltaXMm.toFixed(1));
+                            $('#curY').removeClass('text-muted').text(qr.realDeltaYMm.toFixed(1));
+                            $('#curDepth').removeClass('text-muted').text(qr.depthMm.toFixed(1));
+                            $('#curAngle').removeClass('text-muted').text(qr.rotationAngle.toFixed(1));
+                        }
+                    } else {
+                        $('#curX, #curY, #curDepth, #curAngle').addClass('text-muted').text('-');
+                    }
+
+                    if (o.hasTeaching && o.hasCurrent) {
+                        $('#offX').removeClass('text-muted').text(o.offsetXMm.toFixed(1));
+                        $('#offY').removeClass('text-muted').text(o.offsetYMm.toFixed(1));
+                        $('#offDepth').removeClass('text-muted').text(o.offsetDepthMm.toFixed(1));
+                        $('#offAngle').removeClass('text-muted').text(o.offsetAngle.toFixed(1));
+                    } else {
+                        $('#offX, #offY, #offDepth, #offAngle').addClass('text-muted').text('-');
+                    }
+                });
+            }
+
+            var lastQrData = null;
+            // QR 데이터를 Teaching 폴링에서도 참조할 수 있도록 저장
+            $(document).ajaxComplete(function (e, xhr, settings) {
+                if (settings.url && settings.url.indexOf('handler=QrStatus') >= 0) {
+                    try { lastQrData = JSON.parse(xhr.responseText); } catch (_) {}
+                }
+            });
+
+            setInterval(checkTeachingStatus, 500);
         });
     </script>
 }

@@ -35,7 +35,9 @@ builder.Host.ConfigureContainer<ContainerBuilder>(containerBuilder =>
             DepthFrameWidth = section.GetValue("DepthFrameWidth", 640),
             DepthFrameHeight = section.GetValue("DepthFrameHeight", 480),
             TargetFps = section.GetValue("TargetFps", 15),
-            JpegQuality = section.GetValue("JpegQuality", 75)
+            JpegQuality = section.GetValue("JpegQuality", 75),
+            DepthFx = section.GetValue("DepthFx", 570.0),
+            DepthFy = section.GetValue("DepthFy", 570.0)
         };
     }).As<CameraSettings>().SingleInstance();
 

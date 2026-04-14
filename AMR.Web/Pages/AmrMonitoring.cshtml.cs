@@ -8,22 +8,19 @@ namespace AMR.Web.Pages;
 [IgnoreAntiforgeryToken]
 public class AmrMonitoringModel : PageModel
 {
-    private static AmrModbusTcpClient? _client;
-    private static readonly object _lock = new();
+    private readonly AmrModbusTcpClient _client;
+    private readonly AmrModbusTcpSettings _settings;
 
-    private readonly AmrModbusTcpSettings _defaultSettings;
-    private readonly ILoggerFactory _loggerFactory;
-
-    public AmrMonitoringModel(AmrModbusTcpSettings defaultSettings, ILoggerFactory loggerFactory)
+    public AmrMonitoringModel(AmrModbusTcpClient client, AmrModbusTcpSettings settings)
     {
-        _defaultSettings = defaultSettings;
-        _loggerFactory = loggerFactory;
+        _client = client;
+        _settings = settings;
     }
 
-    public bool IsConnected => _client?.IsConnected ?? false;
-    public string DefaultIp => _defaultSettings.IpAddress;
-    public int DefaultPort => _defaultSettings.Port;
-    public byte DefaultSlaveId => _defaultSettings.SlaveId;
+    public bool IsConnected => _client.IsConnected;
+    public string DefaultIp => _settings.IpAddress;
+    public int DefaultPort => _settings.Port;
+    public byte DefaultSlaveId => _settings.SlaveId;
 
     public void OnGet() { }
 
@@ -31,25 +28,17 @@ public class AmrMonitoringModel : PageModel
     {
         try
         {
-            lock (_lock)
-            {
-                if (_client is { IsConnected: true })
-                {
-                    _client.Disconnect();
-                    _client.Dispose();
-                }
+            // 기존 연결이 있으면 해제
+            if (_client.IsConnected)
+                _client.Disconnect();
 
-                var settings = new AmrModbusTcpSettings
-                {
-                    IpAddress = request.IpAddress,
-                    Port = request.Port,
-                    SlaveId = request.SlaveId
-                };
-                _client = new AmrModbusTcpClient(settings, _loggerFactory.CreateLogger<AmrModbusTcpClient>());
-            }
-            await _client!.ConnectAsync();
+            // 공유 설정 업데이트
+            _settings.IpAddress = request.IpAddress;
+            _settings.Port = request.Port;
+            _settings.SlaveId = request.SlaveId;
+
+            await _client.ConnectAsync();
             return new JsonResult(new { success = true });
-
         }
         catch (Exception ex)
         {
@@ -61,15 +50,8 @@ public class AmrMonitoringModel : PageModel
     {
         try
         {
-            lock (_lock)
-            {
-                if (_client != null)
-                {
-                    _client.Disconnect();
-                    _client.Dispose();
-                    _client = null;
-                }
-            }
+            if (_client.IsConnected)
+                _client.Disconnect();
             return new JsonResult(new { success = true });
         }
         catch (Exception ex)
@@ -82,7 +64,7 @@ public class AmrMonitoringModel : PageModel
     {
         try
         {
-            if (_client is not { IsConnected: true })
+            if (!_client.IsConnected)
                 return new JsonResult(new { success = false, error = "연결되지 않음" });
 
             var status = await _client.ReadRobotStatusAsync();
@@ -123,7 +105,7 @@ public class AmrMonitoringModel : PageModel
 
     public IActionResult OnGetConnectionStatus()
     {
-        return new JsonResult(new { connected = _client?.IsConnected ?? false });
+        return new JsonResult(new { connected = _client.IsConnected });
     }
 
     /// <summary>Pose 레지스터 영역 Raw 값 + 바이트 순서 해석 (진단용)</summary>
@@ -131,7 +113,7 @@ public class AmrMonitoringModel : PageModel
     {
         try
         {
-            if (_client is not { IsConnected: true })
+            if (!_client.IsConnected)
                 return new JsonResult(new { success = false, error = "연결되지 않음" });
 
             var regs = await _client.ReadRawInputRegistersAsync(19, 6);
@@ -163,7 +145,7 @@ public class AmrMonitoringModel : PageModel
     {
         try
         {
-            if (_client is not { IsConnected: true })
+            if (!_client.IsConnected)
                 return new JsonResult(new { success = false, error = "연결되지 않음" });
 
             var regs = await _client.ReadRawInputRegistersAsync(0, 16);
@@ -184,7 +166,7 @@ public class AmrMonitoringModel : PageModel
     {
         try
         {
-            if (_client is not { IsConnected: true })
+            if (!_client.IsConnected)
                 return new JsonResult(new { success = false, error = "연결되지 않음" });
 
             var regs = await _client.ReadRawHoldingRegistersAsync(0, 33);
@@ -204,7 +186,7 @@ public class AmrMonitoringModel : PageModel
     {
         try
         {
-            if (_client is not { IsConnected: true })
+            if (!_client.IsConnected)
                 return new JsonResult(new { success = false, error = "연결되지 않음" });
 
             switch (request.Command)

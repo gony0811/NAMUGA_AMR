@@ -11,7 +11,7 @@ public class ModbusSettings
     [Required(ErrorMessage = "포트를 입력해주세요.")]
     [Range(1, 65535, ErrorMessage = "포트는 1~65535 범위여야 합니다.")]
     [Display(Name = "포트")]
-    public int Port { get; set; } = 5020;
+    public int Port { get; set; } = 502;
 
     [Required(ErrorMessage = "Slave ID를 입력해주세요.")]
     [Range(1, 247, ErrorMessage = "Slave ID는 1~247 범위여야 합니다.")]

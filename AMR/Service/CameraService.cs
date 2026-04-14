@@ -18,6 +18,11 @@ public class CameraSettings
     public int TargetFps { get; set; } = 15;
     public int JpegQuality { get; set; } = 75;
     public int WarmupDelayMs { get; set; } = 500;
+
+    /// <summary>Depth 카메라 X축 초점거리 (픽셀 단위, Orbbec 기본값 ~570)</summary>
+    public double DepthFx { get; set; } = 570.0;
+    /// <summary>Depth 카메라 Y축 초점거리 (픽셀 단위, Orbbec 기본값 ~570)</summary>
+    public double DepthFy { get; set; } = 570.0;
 }
 
 public class CameraDeviceInfo
@@ -50,6 +55,8 @@ public class CameraService : BackgroundService
         }
     };
     private QrDetectionResult _lastQrResult = new();
+    private QrTeachingPosition _teachingPosition = new();
+    private readonly object _teachingLock = new();
 
     private CancellationTokenSource? _switchCts;
     private readonly object _switchLock = new();
@@ -91,6 +98,76 @@ public class CameraService : BackgroundService
         {
             return _lastQrResult;
         }
+    }
+
+    /// <summary>현재 QR 감지 결과를 Teaching 위치로 저장</summary>
+    public QrTeachingPosition SaveTeachingPosition()
+    {
+        var qr = GetQrDetectionResult();
+        if (!qr.Detected || qr.DepthMm <= 0)
+            throw new InvalidOperationException("유효한 QR 감지 결과가 없습니다. (Depth 포함 필요)");
+
+        var teaching = new QrTeachingPosition
+        {
+            IsTaught = true,
+            X = qr.RealDeltaXMm,
+            Y = qr.RealDeltaYMm,
+            DepthMm = qr.DepthMm,
+            Angle = qr.RotationAngle,
+            QrText = qr.DecodedText,
+            TaughtAt = DateTime.Now
+        };
+
+        lock (_teachingLock)
+        {
+            _teachingPosition = teaching;
+        }
+
+        _logger.LogInformation("QR Teaching 저장: X={X:F1}mm, Y={Y:F1}mm, Depth={D:F0}mm, Angle={A:F1}°",
+            teaching.X, teaching.Y, teaching.DepthMm, teaching.Angle);
+
+        return teaching;
+    }
+
+    /// <summary>Teaching 위치 초기화</summary>
+    public void ClearTeachingPosition()
+    {
+        lock (_teachingLock)
+        {
+            _teachingPosition = new QrTeachingPosition();
+        }
+    }
+
+    /// <summary>저장된 Teaching 위치 조회</summary>
+    public QrTeachingPosition GetTeachingPosition()
+    {
+        lock (_teachingLock)
+        {
+            return _teachingPosition;
+        }
+    }
+
+    /// <summary>Teaching 위치 대비 현재 QR 위치의 변화량 계산 (Cobot 보정용)</summary>
+    public QrPositionOffset GetPositionOffset()
+    {
+        var teaching = GetTeachingPosition();
+        var qr = GetQrDetectionResult();
+
+        var offset = new QrPositionOffset
+        {
+            HasTeaching = teaching.IsTaught,
+            HasCurrent = qr.Detected && qr.DepthMm > 0
+        };
+
+        if (offset.HasTeaching && offset.HasCurrent)
+        {
+            offset.OffsetXMm = Math.Round(qr.RealDeltaXMm - teaching.X, 1);
+            offset.OffsetYMm = Math.Round(qr.RealDeltaYMm - teaching.Y, 1);
+            offset.OffsetDepthMm = Math.Round(qr.DepthMm - teaching.DepthMm, 1);
+            offset.OffsetAngle = Math.Round(qr.RotationAngle - teaching.Angle, 1);
+        }
+
+        return offset;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -224,7 +301,7 @@ public class CameraService : BackgroundService
 
             if (hasRgb)
             {
-                DetectAndDrawQrCode(rgbFrame);
+                DetectAndDrawQrCode(rgbFrame, hasDepth ? depthFrame : null);
                 var rgbBuf = EncodeToJpeg(rgbFrame);
                 lock (_rgbLock)
                 {
@@ -245,7 +322,7 @@ public class CameraService : BackgroundService
         }
     }
 
-    private void DetectAndDrawQrCode(Mat rgbFrame)
+    private void DetectAndDrawQrCode(Mat rgbFrame, Mat? depthFrame)
     {
         try
         {
@@ -287,6 +364,43 @@ public class CameraService : BackgroundService
                 var deltaX = centerX - frameCenterX;
                 var deltaY = centerY - frameCenterY;
 
+                // Depth 기반 실제 거리 계산 (mm)
+                double depthMm = 0;
+                double realDeltaXMm = 0, realDeltaYMm = 0, realDistanceMm = 0;
+
+                if (depthFrame is not null && !depthFrame.Empty())
+                {
+                    // RGB 해상도 → Depth 해상도로 QR 중심 좌표 스케일링
+                    var scaleX = (double)depthFrame.Width / rgbFrame.Width;
+                    var scaleY = (double)depthFrame.Height / rgbFrame.Height;
+                    var depthPixelX = (int)(centerX * scaleX);
+                    var depthPixelY = (int)(centerY * scaleY);
+
+                    // 범위 체크
+                    depthPixelX = Math.Clamp(depthPixelX, 0, depthFrame.Width - 1);
+                    depthPixelY = Math.Clamp(depthPixelY, 0, depthFrame.Height - 1);
+
+                    // 16-bit depth 값 읽기 (Orbbec: mm 단위)
+                    depthMm = depthFrame.At<ushort>(depthPixelY, depthPixelX);
+
+                    // depth가 유효한 경우 (0 = 측정 불가) 실제 거리 계산
+                    if (depthMm > 0)
+                    {
+                        // depth 이미지 좌표계에서의 delta (픽셀)
+                        var depthCx = depthFrame.Width / 2.0;
+                        var depthCy = depthFrame.Height / 2.0;
+                        var depthDeltaX = depthPixelX - depthCx;
+                        var depthDeltaY = depthPixelY - depthCy;
+
+                        // 핀홀 카메라 모델: real = pixel_delta * depth / focal_length
+                        realDeltaXMm = depthDeltaX * depthMm / _settings.DepthFx;
+                        realDeltaYMm = depthDeltaY * depthMm / _settings.DepthFy;
+                        realDistanceMm = Math.Sqrt(realDeltaXMm * realDeltaXMm
+                                                 + realDeltaYMm * realDeltaYMm
+                                                 + depthMm * depthMm);
+                    }
+                }
+
                 // QR 결과 저장
                 lock (_qrLock)
                 {
@@ -301,6 +415,10 @@ public class CameraService : BackgroundService
                         FrameCenterY = Math.Round(frameCenterY, 1),
                         DeltaX = Math.Round(deltaX, 1),
                         DeltaY = Math.Round(deltaY, 1),
+                        DepthMm = Math.Round(depthMm, 1),
+                        RealDeltaXMm = Math.Round(realDeltaXMm, 1),
+                        RealDeltaYMm = Math.Round(realDeltaYMm, 1),
+                        RealDistanceMm = Math.Round(realDistanceMm, 1),
                         DetectedAt = DateTime.Now
                     };
                 }
@@ -329,9 +447,12 @@ public class CameraService : BackgroundService
                 // 텍스트 오버레이
                 var label = $"QR: {decodedText}";
                 var coordLabel = $"Center: ({centerX:F1}, {centerY:F1})  Angle: {angle:F1} deg";
-                var deltaLabel = $"Delta: ({deltaX:F1}, {deltaY:F1})";
+                var deltaLabel = $"Delta: ({deltaX:F1}, {deltaY:F1}) px";
+                var depthLabel = depthMm > 0
+                    ? $"Depth: {depthMm:F0}mm  Real: ({realDeltaXMm:F1}, {realDeltaYMm:F1}) mm  Dist: {realDistanceMm:F1}mm"
+                    : "Depth: N/A";
 
-                Cv2.Rectangle(rgbFrame, new Point(5, 5), new Point(560, 85),
+                Cv2.Rectangle(rgbFrame, new Point(5, 5), new Point(640, 110),
                     new Scalar(0, 0, 0), -1);
                 Cv2.PutText(rgbFrame, label, new Point(10, 25),
                     HersheyFonts.HersheySimplex, 0.7, new Scalar(0, 255, 0), 2);
@@ -339,6 +460,8 @@ public class CameraService : BackgroundService
                     HersheyFonts.HersheySimplex, 0.6, new Scalar(0, 255, 255), 2);
                 Cv2.PutText(rgbFrame, deltaLabel, new Point(10, 75),
                     HersheyFonts.HersheySimplex, 0.6, new Scalar(255, 200, 0), 2);
+                Cv2.PutText(rgbFrame, depthLabel, new Point(10, 100),
+                    HersheyFonts.HersheySimplex, 0.55, new Scalar(100, 255, 100), 2);
             }
             else
             {

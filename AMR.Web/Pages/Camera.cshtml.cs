@@ -69,7 +69,67 @@ public class CameraModel : PageModel
             result.FrameCenterY,
             result.DeltaX,
             result.DeltaY,
+            result.DepthMm,
+            result.RealDeltaXMm,
+            result.RealDeltaYMm,
+            result.RealDistanceMm,
             DetectedAt = result.Detected ? result.DetectedAt.ToString("HH:mm:ss.fff") : ""
+        });
+    }
+
+    public IActionResult OnPostSaveTeaching()
+    {
+        try
+        {
+            var teaching = _cameraService.SaveTeachingPosition();
+            return new JsonResult(new
+            {
+                success = true,
+                teaching.X,
+                teaching.Y,
+                teaching.DepthMm,
+                teaching.Angle,
+                teaching.QrText,
+                TaughtAt = teaching.TaughtAt.ToString("HH:mm:ss.fff")
+            });
+        }
+        catch (Exception ex)
+        {
+            return new JsonResult(new { success = false, error = ex.Message });
+        }
+    }
+
+    public IActionResult OnPostClearTeaching()
+    {
+        _cameraService.ClearTeachingPosition();
+        return new JsonResult(new { success = true });
+    }
+
+    public IActionResult OnGetTeachingStatus()
+    {
+        var teaching = _cameraService.GetTeachingPosition();
+        var offset = _cameraService.GetPositionOffset();
+        return new JsonResult(new
+        {
+            teaching = new
+            {
+                teaching.IsTaught,
+                teaching.X,
+                teaching.Y,
+                teaching.DepthMm,
+                teaching.Angle,
+                teaching.QrText,
+                TaughtAt = teaching.IsTaught ? teaching.TaughtAt.ToString("HH:mm:ss.fff") : ""
+            },
+            offset = new
+            {
+                offset.HasTeaching,
+                offset.HasCurrent,
+                offset.OffsetXMm,
+                offset.OffsetYMm,
+                offset.OffsetDepthMm,
+                offset.OffsetAngle
+            }
         });
     }
 
