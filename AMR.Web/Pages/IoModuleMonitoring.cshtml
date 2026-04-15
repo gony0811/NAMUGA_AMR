@@ -1,0 +1,392 @@
+@page
+@model AMR.Web.Pages.IoModuleMonitoringModel
+@{
+    ViewData["Title"] = "I/O Module Monitoring";
+}
+
+<div class="container-fluid mt-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>LS XEL-BSSRT I/O Module</h2>
+        <span id="connBadge" class="badge @(Model.IsConnected ? "bg-success" : "bg-danger")">
+            Modbus: @(Model.IsConnected ? "연결됨" : "미연결")
+        </span>
+    </div>
+
+    @* ── 연결 제어 바 ── *@
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <div class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label form-label-sm mb-0">IP Address</label>
+                    <input id="ipAddress" type="text" class="form-control form-control-sm" value="@Model.DefaultIp" style="width:160px" />
+                </div>
+                <div class="col-auto">
+                    <label class="form-label form-label-sm mb-0">Port</label>
+                    <input id="port" type="number" class="form-control form-control-sm" value="@Model.DefaultPort" style="width:80px" />
+                </div>
+                <div class="col-auto">
+                    <label class="form-label form-label-sm mb-0">Slave ID</label>
+                    <input id="slaveId" type="number" class="form-control form-control-sm" value="@Model.DefaultSlaveId" min="0" max="255" style="width:70px" />
+                </div>
+                <div class="col-auto">
+                    <button id="btnConnect" class="btn btn-primary btn-sm">연결</button>
+                    <button id="btnDisconnect" class="btn btn-outline-secondary btn-sm">해제</button>
+                </div>
+                <div class="col-auto">
+                    <div id="connResult" style="display:none;" class="small"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <hr />
+
+    <div class="row">
+        @* ══════════════ 왼쪽: 입력 모니터링 ══════════════ *@
+        <div class="col-lg-6 mb-3">
+            <h5 class="mb-3">입력 모니터링 (Discrete Input X000~X005)</h5>
+
+            <div class="card mb-3">
+                <div class="card-header py-2"><strong>DI 상태</strong></div>
+                <div class="card-body py-2">
+                    <div id="inputError" class="alert alert-danger py-1 mb-2 small" style="display:none;"></div>
+                    <table class="table table-sm table-borderless mb-0">
+                        <tbody>
+                            <tr><td class="text-muted" style="width:50%">X000 — EMO (비상정지)</td><td id="val-emo">-</td></tr>
+                            <tr><td class="text-muted">X001 — RESET</td><td id="val-reset">-</td></tr>
+                            <tr><td class="text-muted">X002 — MZ DETECT 1</td><td id="val-mz1">-</td></tr>
+                            <tr><td class="text-muted">X003 — MZ DETECT 2</td><td id="val-mz2">-</td></tr>
+                            <tr><td class="text-muted">X004 — MZ DETECT 3</td><td id="val-mz3">-</td></tr>
+                            <tr><td class="text-muted">X005 — MZ DETECT 4</td><td id="val-mz4">-</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            @* Raw 진단 *@
+            <div class="card mb-3 border-info">
+                <div class="card-header py-2 bg-info text-white d-flex justify-content-between align-items-center">
+                    <strong>Raw 진단 (0~15)</strong>
+                    <div>
+                        <button id="btnRawDI" class="btn btn-light btn-sm py-0">Discrete Input</button>
+                        <button id="btnRawCoil" class="btn btn-light btn-sm py-0">Coil</button>
+                    </div>
+                </div>
+                <div class="card-body py-2">
+                    <pre id="rawResult" class="mb-0 small" style="max-height:260px; overflow-y:auto;">버튼을 눌러 Raw 값을 확인하세요</pre>
+                </div>
+            </div>
+        </div>
+
+        @* ══════════════ 오른쪽: 출력 제어 ══════════════ *@
+        <div class="col-lg-6 mb-3">
+            <h5 class="mb-3">출력 제어 (Coil Y000~Y005)</h5>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                    <strong>출력 현재 상태 및 제어</strong>
+                    <button class="btn btn-outline-danger btn-sm py-0" onclick="writeOutput('AllTowerLampsOff', false)">타워램프 일괄 OFF</button>
+                </div>
+                <div class="card-body py-2">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>포인트</th>
+                                <th>설명</th>
+                                <th>상태</th>
+                                <th style="width: 150px;">제어</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Y000</td>
+                                <td>Tower Lamp <span class="badge bg-danger">Red</span></td>
+                                <td id="out-towerLampRed">-</td>
+                                <td>
+                                    <button class="btn btn-success btn-sm py-0" onclick="writeOutput('TowerLampRed', true)">ON</button>
+                                    <button class="btn btn-secondary btn-sm py-0" onclick="writeOutput('TowerLampRed', false)">OFF</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Y001</td>
+                                <td>Tower Lamp <span class="badge bg-warning text-dark">Yellow</span></td>
+                                <td id="out-towerLampYellow">-</td>
+                                <td>
+                                    <button class="btn btn-success btn-sm py-0" onclick="writeOutput('TowerLampYellow', true)">ON</button>
+                                    <button class="btn btn-secondary btn-sm py-0" onclick="writeOutput('TowerLampYellow', false)">OFF</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Y002</td>
+                                <td>Tower Lamp <span class="badge bg-success">Green</span></td>
+                                <td id="out-towerLampGreen">-</td>
+                                <td>
+                                    <button class="btn btn-success btn-sm py-0" onclick="writeOutput('TowerLampGreen', true)">ON</button>
+                                    <button class="btn btn-secondary btn-sm py-0" onclick="writeOutput('TowerLampGreen', false)">OFF</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Y003</td>
+                                <td>Tower Lamp Buzzer</td>
+                                <td id="out-towerLampBuzzer">-</td>
+                                <td>
+                                    <button class="btn btn-success btn-sm py-0" onclick="writeOutput('TowerLampBuzzer', true)">ON</button>
+                                    <button class="btn btn-secondary btn-sm py-0" onclick="writeOutput('TowerLampBuzzer', false)">OFF</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Y004</td>
+                                <td>Reset SW Lamp</td>
+                                <td id="out-resetSwLamp">-</td>
+                                <td>
+                                    <button class="btn btn-success btn-sm py-0" onclick="writeOutput('ResetSwLamp', true)">ON</button>
+                                    <button class="btn btn-secondary btn-sm py-0" onclick="writeOutput('ResetSwLamp', false)">OFF</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Y005</td>
+                                <td>Cobot Servo ON/OFF</td>
+                                <td id="out-cobotServoOnOff">-</td>
+                                <td>
+                                    <button class="btn btn-success btn-sm py-0" onclick="writeOutput('CobotServoOnOff', true)">ON</button>
+                                    <button class="btn btn-secondary btn-sm py-0" onclick="writeOutput('CobotServoOnOff', false)">OFF</button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            @* 쓰기 로그 *@
+            <div class="card">
+                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                    <strong>쓰기 로그</strong>
+                    <button class="btn btn-outline-secondary btn-sm py-0" onclick="$('#writeLog').empty()">지우기</button>
+                </div>
+                <div class="card-body p-0" style="max-height:250px; overflow-y:auto;">
+                    <table class="table table-sm table-striped mb-0">
+                        <thead class="table-light sticky-top">
+                            <tr><th>시간</th><th>명령</th><th>결과</th></tr>
+                        </thead>
+                        <tbody id="writeLog"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    let pollTimer = null;
+    let pollFailCount = 0;
+    const maxPollFails = 3;
+
+    function badge(on) {
+        return on
+            ? '<span class="badge bg-success">ON</span>'
+            : '<span class="badge bg-secondary">OFF</span>';
+    }
+
+    function emoBadge(on) {
+        return on
+            ? '<span class="badge bg-danger">비상정지 (ON)</span>'
+            : '<span class="badge bg-success">정상 (OFF)</span>';
+    }
+
+    // ── 연결 ──
+    $('#btnConnect').click(function () {
+        const btn = $(this);
+        btn.prop('disabled', true);
+
+        $.ajax({
+            url: '/IoModuleMonitoring?handler=Connect',
+            method: 'POST',
+            contentType: 'application/json',
+            timeout: 10000,
+            data: JSON.stringify({
+                ipAddress: $('#ipAddress').val(),
+                port: parseInt($('#port').val()) || 502,
+                slaveId: parseInt($('#slaveId').val()) || 1
+            }),
+            success: function (res) {
+                if (res.success) {
+                    showConnResult(true, '연결 성공');
+                    updateBadge(true);
+                    startPolling();
+                } else {
+                    showConnResult(false, res.error);
+                    updateBadge(false);
+                }
+            },
+            error: function (xhr, status) {
+                const msg = status === 'timeout' ? '연결 시간 초과 (10초)' : '요청 실패';
+                showConnResult(false, msg);
+            },
+            complete: function () {
+                btn.prop('disabled', false);
+            }
+        });
+    });
+
+    // ── 해제 ──
+    $('#btnDisconnect').click(function () {
+        stopPolling();
+        updateBadge(false);
+        clearStatus();
+
+        setTimeout(function () {
+            $.ajax({
+                url: '/IoModuleMonitoring?handler=Disconnect',
+                method: 'POST',
+                contentType: 'application/json',
+                timeout: 10000,
+                data: JSON.stringify({}),
+                success: function (res) {
+                    showConnResult(res.success, res.success ? '연결 해제됨' : res.error);
+                },
+                error: function () {
+                    showConnResult(false, '연결 해제 요청 실패');
+                }
+            });
+        }, 500);
+    });
+
+    // ── 폴링 ──
+    function startPolling() {
+        stopPolling();
+        pollFailCount = 0;
+        pollOnce();
+        pollTimer = setInterval(pollOnce, 1000);
+    }
+
+    function stopPolling() {
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+    }
+
+    function pollOnce() {
+        $.getJSON('/IoModuleMonitoring?handler=Inputs', function (res) {
+            if (res.success && res.data) {
+                pollFailCount = 0;
+                const d = res.data;
+                $('#val-emo').html(emoBadge(d.emo));
+                $('#val-reset').html(badge(d.reset));
+                $('#val-mz1').html(badge(d.mzDetect1));
+                $('#val-mz2').html(badge(d.mzDetect2));
+                $('#val-mz3').html(badge(d.mzDetect3));
+                $('#val-mz4').html(badge(d.mzDetect4));
+                $('#inputError').hide();
+            } else {
+                handlePollFail(res.error || '알 수 없는 오류');
+            }
+        }).fail(function (xhr) {
+            handlePollFail(xhr.statusText || 'Network Error');
+        });
+
+        $.getJSON('/IoModuleMonitoring?handler=Outputs', function (res) {
+            if (res.success && res.data) {
+                const d = res.data;
+                $('#out-towerLampRed').html(badge(d.towerLampRed));
+                $('#out-towerLampYellow').html(badge(d.towerLampYellow));
+                $('#out-towerLampGreen').html(badge(d.towerLampGreen));
+                $('#out-towerLampBuzzer').html(badge(d.towerLampBuzzer));
+                $('#out-resetSwLamp').html(badge(d.resetSwLamp));
+                $('#out-cobotServoOnOff').html(badge(d.cobotServoOnOff));
+            }
+        });
+    }
+
+    function handlePollFail(msg) {
+        pollFailCount++;
+        $('#inputError').text('읽기 실패 (' + pollFailCount + '/' + maxPollFails + '): ' + msg).show();
+        if (pollFailCount >= maxPollFails) {
+            updateBadge(false);
+            stopPolling();
+            clearStatus();
+        }
+    }
+
+    function clearStatus() {
+        $('[id^="val-"]').text('-');
+        $('[id^="out-"]').text('-');
+    }
+
+    // ── 출력 쓰기 ──
+    function writeOutput(command, value) {
+        $.ajax({
+            url: '/IoModuleMonitoring?handler=WriteOutput',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ command: command, value: value }),
+            success: function (res) {
+                addWriteLog(command, value ? 'ON' : 'OFF', res.success, res.error);
+            },
+            error: function () {
+                addWriteLog(command, '-', false, '요청 실패');
+            }
+        });
+    }
+    window.writeOutput = writeOutput;
+
+    function addWriteLog(command, value, success, error) {
+        const now = new Date().toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const b = success
+            ? '<span class="badge bg-success">OK</span>'
+            : '<span class="badge bg-danger">' + (error || 'FAIL') + '</span>';
+        $('#writeLog').prepend(`<tr><td>${now}</td><td>${command} = ${value}</td><td>${b}</td></tr>`);
+    }
+
+    // ── Raw 진단 ──
+    $('#btnRawDI').click(function () {
+        $.getJSON('/IoModuleMonitoring?handler=RawDiscreteInputs', function (res) {
+            if (res.success) {
+                let txt = '[Discrete Input 0~15]\nAddr  Value\n────  ─────\n';
+                res.discreteInputs.forEach(function (b) {
+                    txt += `  ${String(b.address).padStart(3)}   ${b.value}\n`;
+                });
+                $('#rawResult').text(txt);
+            } else {
+                $('#rawResult').text('Error: ' + res.error);
+            }
+        });
+    });
+
+    $('#btnRawCoil').click(function () {
+        $.getJSON('/IoModuleMonitoring?handler=RawCoils', function (res) {
+            if (res.success) {
+                let txt = '[Coil 0~15]\nAddr  Value\n────  ─────\n';
+                res.coils.forEach(function (b) {
+                    txt += `  ${String(b.address).padStart(3)}   ${b.value}\n`;
+                });
+                $('#rawResult').text(txt);
+            } else {
+                $('#rawResult').text('Error: ' + res.error);
+            }
+        });
+    });
+
+    function updateBadge(connected) {
+        $('#connBadge')
+            .removeClass('bg-success bg-danger')
+            .addClass(connected ? 'bg-success' : 'bg-danger')
+            .text('Modbus: ' + (connected ? '연결됨' : '미연결'));
+    }
+
+    function showConnResult(success, msg) {
+        $('#connResult')
+            .removeClass('text-success text-danger')
+            .addClass(success ? 'text-success' : 'text-danger')
+            .text(msg).show();
+        setTimeout(function () { $('#connResult').fadeOut(); }, 3000);
+    }
+
+    $(function () {
+        if ('@Model.IsConnected' === 'True') {
+            startPolling();
+        }
+    });
+</script>
+}

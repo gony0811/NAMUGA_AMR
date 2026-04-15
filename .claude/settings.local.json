@@ -7,7 +7,16 @@
       "WebSearch",
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(dotnet tool:*)",
-      "Bash(dotnet ef migrations:*)"
+      "Bash(dotnet ef migrations:*)",
+      "Bash(sips -Z 1600 /tmp/io_list.png --out /tmp/io_list_small.png)",
+      "Bash(sips -Z 1000 /tmp/io_list.png --out /tmp/io_list_s.png)",
+      "Bash(sips -c 2200 1700 /tmp/io_list.png --out /tmp/io_crop.png)",
+      "Bash(sips -Z 1400 /tmp/io_crop.png --out /tmp/io_crop_s.png)",
+      "Bash(sips -Z 1100 /tmp/io_crop.png --out /tmp/io_crop_s2.png)",
+      "Bash(sips -c 3500 2300 /tmp/io_list.png --out /tmp/io_full.png)",
+      "Bash(sips -Z 1400 /tmp/io_full.png --out /tmp/io_full_s.png)",
+      "Bash(brew list *)",
+      "Bash(sips *)"
     ]
   }
 }

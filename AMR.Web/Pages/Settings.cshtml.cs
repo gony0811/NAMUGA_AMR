@@ -15,15 +15,18 @@ public class SettingsModel : PageModel
     private readonly SettingsService _settingsService;
     private readonly AmrModbusTcpSettings _modbusSettings;
     private readonly CobotModbusTcpSettings _cobotModbusSettings;
+    private readonly IoModuleModbusTcpSettings _ioModuleModbusSettings;
     private readonly AmrService _amrService;
     private readonly AmrDbContext _dbContext;
 
     public SettingsModel(SettingsService settingsService, AmrModbusTcpSettings modbusSettings,
-        CobotModbusTcpSettings cobotModbusSettings, AmrService amrService, AmrDbContext dbContext)
+        CobotModbusTcpSettings cobotModbusSettings, IoModuleModbusTcpSettings ioModuleModbusSettings,
+        AmrService amrService, AmrDbContext dbContext)
     {
         _settingsService = settingsService;
         _modbusSettings = modbusSettings;
         _cobotModbusSettings = cobotModbusSettings;
+        _ioModuleModbusSettings = ioModuleModbusSettings;
         _amrService = amrService;
         _dbContext = dbContext;
     }
@@ -37,6 +40,9 @@ public class SettingsModel : PageModel
     [BindProperty]
     public CobotModbusSettings CobotModbusSettings { get; set; } = new();
 
+    [BindProperty]
+    public IoModuleModbusSettings IoModuleModbusSettings { get; set; } = new();
+
     [TempData]
     public string? StatusMessage { get; set; }
 
@@ -45,6 +51,7 @@ public class SettingsModel : PageModel
         MqttSettings = _settingsService.LoadMqtt();
         ModbusSettings = _settingsService.LoadModbus();
         CobotModbusSettings = _settingsService.LoadCobotModbus();
+        IoModuleModbusSettings = _settingsService.LoadIoModuleModbus();
     }
 
     public IActionResult OnPost()
@@ -54,7 +61,7 @@ public class SettingsModel : PageModel
 
         try
         {
-            _settingsService.Save(MqttSettings, ModbusSettings, CobotModbusSettings);
+            _settingsService.Save(MqttSettings, ModbusSettings, CobotModbusSettings, IoModuleModbusSettings);
 
             // AMR 인메모리 싱글톤 설정 업데이트 후 재연결 트리거
             _modbusSettings.IpAddress = ModbusSettings.IpAddress;
@@ -66,6 +73,11 @@ public class SettingsModel : PageModel
             _cobotModbusSettings.IpAddress = CobotModbusSettings.IpAddress;
             _cobotModbusSettings.Port = CobotModbusSettings.Port;
             _cobotModbusSettings.SlaveId = CobotModbusSettings.SlaveId;
+
+            // I/O Module 인메모리 싱글톤 설정 업데이트
+            _ioModuleModbusSettings.IpAddress = IoModuleModbusSettings.IpAddress;
+            _ioModuleModbusSettings.Port = IoModuleModbusSettings.Port;
+            _ioModuleModbusSettings.SlaveId = IoModuleModbusSettings.SlaveId;
 
             StatusMessage = "설정이 저장되었습니다. Modbus TCP 재연결을 시도합니다.";
         }

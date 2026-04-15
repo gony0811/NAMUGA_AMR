@@ -22,6 +22,10 @@ public class AmrModule : Module
             .AsSelf()
             .SingleInstance();
 
+        builder.RegisterType<IoModuleModbusTcpClient>()
+            .AsSelf()
+            .SingleInstance();
+
         builder.RegisterType<AmrMqttClient>()
             .AsSelf()
             .SingleInstance();
@@ -32,6 +36,10 @@ public class AmrModule : Module
             .SingleInstance();
 
         builder.RegisterType<CobotService>()
+            .AsSelf()
+            .SingleInstance();
+
+        builder.RegisterType<IoModuleService>()
             .AsSelf()
             .SingleInstance();
 

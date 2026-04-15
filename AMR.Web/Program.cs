@@ -67,6 +67,18 @@ builder.Host.ConfigureContainer<ContainerBuilder>(containerBuilder =>
         };
     }).As<CobotModbusTcpSettings>().SingleInstance();
 
+    // I/O Module (LS XEL-BSSRT) Modbus 설정
+    containerBuilder.Register(c =>
+    {
+        var io = c.Resolve<SettingsService>().LoadIoModuleModbus();
+        return new IoModuleModbusTcpSettings
+        {
+            IpAddress = io.IpAddress,
+            Port = io.Port,
+            SlaveId = io.SlaveId
+        };
+    }).As<IoModuleModbusTcpSettings>().SingleInstance();
+
     // MQTT 설정을 appsettings.json에서 로드하여 등록
     containerBuilder.Register(c =>
     {
@@ -87,6 +99,7 @@ builder.Host.ConfigureContainer<ContainerBuilder>(containerBuilder =>
 // BackgroundService 등록
 builder.Services.AddHostedService(sp => sp.GetRequiredService<AmrService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CobotService>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<IoModuleService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MqttService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MainSequenceService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CameraService>());
