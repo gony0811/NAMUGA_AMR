@@ -206,6 +206,7 @@ public class IoModuleMonitoringModel : PageModel
             return new JsonResult(new { success = false, error = ex.Message });
         }
     }
+
 }
 
 public class IoModuleOutputWriteRequest
