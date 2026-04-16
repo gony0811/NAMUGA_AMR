@@ -1,0 +1,421 @@
+@page
+@model AMR.Web.Pages.SequenceModel
+@{
+    ViewData["Title"] = "Sequence";
+}
+
+<div class="container-fluid mt-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>Sequence Test</h2>
+        <span id="seqStatus" class="badge bg-secondary">Idle</span>
+    </div>
+    <hr />
+
+    <div class="row">
+        @* ── 왼쪽: 시퀀스 제어 + 진행 상태 ── *@
+        <div class="col-lg-5 mb-3">
+            @* 시퀀스 시작 카드 *@
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">시퀀스 제어</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-2 mb-2">
+                        <div class="col-4">
+                            <label class="form-label form-label-sm">NodeId</label>
+                            <input type="text" id="nodeId" class="form-control form-control-sm" value="N0001" />
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label form-label-sm">Port</label>
+                            <select id="port" class="form-select form-select-sm">
+                                <option value="">없음</option>
+                                <option value="LEFT">LEFT</option>
+                                <option value="RIGHT">RIGHT</option>
+                            </select>
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label form-label-sm">JobType</label>
+                            <select id="jobType" class="form-select form-select-sm">
+                                <option value="">없음</option>
+                                <option value="LOAD">LOAD</option>
+                                <option value="UNLOAD">UNLOAD</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button id="btnStart" class="btn btn-primary btn-sm flex-fill" onclick="startSequence()">
+                            <i class="bi bi-play-fill"></i> Start Sequence
+                        </button>
+                        <button id="btnAbort" class="btn btn-danger btn-sm" onclick="abortSequence()" disabled>
+                            <i class="bi bi-stop-fill"></i> Abort
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            @* 현재 상태 정보 *@
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">현재 상태</h5>
+                </div>
+                <div class="card-body p-2">
+                    <table class="table table-sm table-borderless mb-0">
+                        <tr><td class="text-muted" style="width:100px">CmdId</td><td id="infoCmdId">-</td></tr>
+                        <tr><td class="text-muted">NodeId</td><td id="infoNodeId">-</td></tr>
+                        <tr><td class="text-muted">Port</td><td id="infoPort">-</td></tr>
+                        <tr><td class="text-muted">JobType</td><td id="infoJobType">-</td></tr>
+                        <tr><td class="text-muted">시작 시각</td><td id="infoStartedAt">-</td></tr>
+                        <tr><td class="text-muted">Step 시작</td><td id="infoStepStartedAt">-</td></tr>
+                    </table>
+                </div>
+            </div>
+
+            @* Step 진행 표시기 *@
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Step 진행</h5>
+                </div>
+                <div class="card-body p-2">
+                    <div class="list-group list-group-flush" id="stepList">
+                        <div class="list-group-item py-1 px-2 d-flex align-items-center" data-step="1">
+                            <span class="badge bg-secondary me-2 step-badge" style="width:24px">1</span>
+                            <small>MoveCmdReceived — moveCmd 수신</small>
+                        </div>
+                        <div class="list-group-item py-1 px-2 d-flex align-items-center" data-step="2">
+                            <span class="badge bg-secondary me-2 step-badge" style="width:24px">2</span>
+                            <small>MoveCmdReply — ACCEPTED 응답</small>
+                        </div>
+                        <div class="list-group-item py-1 px-2 d-flex align-items-center" data-step="3">
+                            <span class="badge bg-secondary me-2 step-badge" style="width:24px">3</span>
+                            <small>SendMoveCommand — AMR 이동 명령</small>
+                        </div>
+                        <div class="list-group-item py-1 px-2 d-flex align-items-center" data-step="4">
+                            <span class="badge bg-secondary me-2 step-badge" style="width:24px">4</span>
+                            <small>WaitArrival — 도착 대기</small>
+                        </div>
+                        <div class="list-group-item py-1 px-2 d-flex align-items-center" data-step="5">
+                            <span class="badge bg-secondary me-2 step-badge" style="width:24px">5</span>
+                            <small>WaitActionCmd — ActionCmd 대기</small>
+                        </div>
+                        <div class="list-group-item py-1 px-2 d-flex align-items-center" data-step="6">
+                            <span class="badge bg-secondary me-2 step-badge" style="width:24px">6</span>
+                            <small>CobotQrPosition — QR 읽기 위치</small>
+                        </div>
+                        <div class="list-group-item py-1 px-2 d-flex align-items-center" data-step="7">
+                            <span class="badge bg-secondary me-2 step-badge" style="width:24px">7</span>
+                            <small>CameraQrRead — QR 인식/offset</small>
+                        </div>
+                        <div class="list-group-item py-1 px-2 d-flex align-items-center" data-step="8">
+                            <span class="badge bg-secondary me-2 step-badge" style="width:24px">8</span>
+                            <small>CobotPickup — PICKUP</small>
+                        </div>
+                        <div class="list-group-item py-1 px-2 d-flex align-items-center" data-step="9">
+                            <span class="badge bg-secondary me-2 step-badge" style="width:24px">9</span>
+                            <small>CobotPlace — PLACE (AMR Port 1)</small>
+                        </div>
+                        <div class="list-group-item py-1 px-2 d-flex align-items-center" data-step="10">
+                            <span class="badge bg-secondary me-2 step-badge" style="width:24px">10</span>
+                            <small>Complete — 완료 통보</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* ── 오른쪽: 수동 Step 실행 + 에러 ── *@
+        <div class="col-lg-7 mb-3">
+            @* 수동 Step 실행 카드 *@
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">수동 Step 실행</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-2">시퀀스가 실행 중이지 않을 때, 개별 Step을 수동으로 실행하여 테스트할 수 있습니다.</p>
+                    <div class="row g-2" id="manualStepButtons">
+                        <div class="col-6 col-md-4">
+                            <button class="btn btn-outline-primary btn-sm w-100 manual-step-btn" data-step="MoveCmdReceived" onclick="executeStep('MoveCmdReceived')">
+                                <strong>1</strong> MoveCmdReceived
+                            </button>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <button class="btn btn-outline-primary btn-sm w-100 manual-step-btn" data-step="MoveCmdReply" onclick="executeStep('MoveCmdReply')">
+                                <strong>2</strong> MoveCmdReply
+                            </button>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <button class="btn btn-outline-primary btn-sm w-100 manual-step-btn" data-step="SendMoveCommand" onclick="executeStep('SendMoveCommand')">
+                                <strong>3</strong> SendMoveCommand
+                            </button>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <button class="btn btn-outline-primary btn-sm w-100 manual-step-btn" data-step="WaitArrival" onclick="executeStep('WaitArrival')">
+                                <strong>4</strong> WaitArrival
+                            </button>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <button class="btn btn-outline-primary btn-sm w-100 manual-step-btn" data-step="WaitActionCmd" onclick="executeStep('WaitActionCmd')">
+                                <strong>5</strong> WaitActionCmd
+                            </button>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <button class="btn btn-outline-primary btn-sm w-100 manual-step-btn" data-step="CobotQrPosition" onclick="executeStep('CobotQrPosition')">
+                                <strong>6</strong> CobotQrPosition
+                            </button>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <button class="btn btn-outline-primary btn-sm w-100 manual-step-btn" data-step="CameraQrRead" onclick="executeStep('CameraQrRead')">
+                                <strong>7</strong> CameraQrRead
+                            </button>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <button class="btn btn-outline-primary btn-sm w-100 manual-step-btn" data-step="CobotPickup" onclick="executeStep('CobotPickup')">
+                                <strong>8</strong> CobotPickup
+                            </button>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <button class="btn btn-outline-primary btn-sm w-100 manual-step-btn" data-step="CobotPlace" onclick="executeStep('CobotPlace')">
+                                <strong>9</strong> CobotPlace
+                            </button>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <button class="btn btn-outline-primary btn-sm w-100 manual-step-btn" data-step="Complete" onclick="executeStep('Complete')">
+                                <strong>10</strong> Complete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* 에러 표시 *@
+            <div id="errorAlert" class="alert alert-danger d-none mb-3">
+                <strong>Error:</strong> <span id="errorMessage"></span>
+            </div>
+
+            @* 실행 로그 카드 *@
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">실행 로그</h5>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="clearLogs()">Clear</button>
+                </div>
+                <div class="card-body p-0">
+                    <div style="max-height: 400px; overflow-y: auto;" id="logContainer">
+                        <table class="table table-sm table-striped mb-0">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th style="width:90px">시간</th>
+                                    <th style="width:140px">Step</th>
+                                    <th>메시지</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logBody">
+                                <tr><td colspan="3" class="text-muted text-center">로그 없음</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    let pollTimer = null;
+    let lastLogCount = 0;
+
+    // Step 이름 → 번호 매핑
+    const stepNumbers = {
+        'Idle': 0, 'MoveCmdReceived': 1, 'MoveCmdReply': 2, 'SendMoveCommand': 3,
+        'WaitArrival': 4, 'WaitActionCmd': 5, 'CobotQrPosition': 6, 'CameraQrRead': 7,
+        'CobotPickup': 8, 'CobotPlace': 9, 'Complete': 10, 'Faulted': 99
+    };
+
+    function startPolling() {
+        stopPolling();
+        pollState();
+        pollLogs();
+        pollTimer = setInterval(function () {
+            pollState();
+            pollLogs();
+        }, 1500);
+    }
+
+    function stopPolling() {
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+    }
+
+    function pollState() {
+        $.getJSON('/Sequence?handler=State', function (res) {
+            updateStateUI(res);
+        });
+    }
+
+    function pollLogs() {
+        $.getJSON('/Sequence?handler=Logs&count=100', function (res) {
+            updateLogsUI(res);
+        });
+    }
+
+    function updateStateUI(state) {
+        // 상태 배지
+        var badge = $('#seqStatus');
+        if (state.isRunning) {
+            badge.removeClass('bg-secondary bg-danger bg-success').addClass('bg-primary');
+            badge.text('Running: ' + state.stepName);
+        } else if (state.stepName === 'Faulted') {
+            badge.removeClass('bg-secondary bg-primary bg-success').addClass('bg-danger');
+            badge.text('Faulted');
+        } else {
+            badge.removeClass('bg-primary bg-danger bg-success').addClass('bg-secondary');
+            badge.text('Idle');
+        }
+
+        // 현재 상태 정보
+        $('#infoCmdId').text(state.cmdId);
+        $('#infoNodeId').text(state.nodeId);
+        $('#infoPort').text(state.port);
+        $('#infoJobType').text(state.jobType);
+        $('#infoStartedAt').text(state.startedAt || '-');
+        $('#infoStepStartedAt').text(state.stepStartedAt || '-');
+
+        // 에러 표시
+        if (state.error) {
+            $('#errorAlert').removeClass('d-none');
+            $('#errorMessage').text(state.error);
+        } else {
+            $('#errorAlert').addClass('d-none');
+        }
+
+        // 버튼 상태
+        $('#btnStart').prop('disabled', state.isRunning);
+        $('#btnAbort').prop('disabled', !state.isRunning);
+        $('.manual-step-btn').prop('disabled', state.isRunning);
+
+        // Step 진행 표시기 업데이트
+        var currentStepNum = state.currentStep;
+        $('#stepList .list-group-item').each(function () {
+            var stepNum = parseInt($(this).data('step'));
+            var badge = $(this).find('.step-badge');
+
+            badge.removeClass('bg-success bg-primary bg-secondary bg-danger');
+
+            if (state.stepName === 'Faulted' && stepNum === currentStepNum) {
+                badge.addClass('bg-danger');
+                $(this).addClass('list-group-item-danger').removeClass('list-group-item-primary list-group-item-success');
+            } else if (state.isRunning && stepNum === currentStepNum) {
+                badge.addClass('bg-primary');
+                $(this).addClass('list-group-item-primary').removeClass('list-group-item-danger list-group-item-success');
+            } else if (stepNum < currentStepNum && currentStepNum > 0 && currentStepNum <= 10) {
+                badge.addClass('bg-success');
+                $(this).addClass('list-group-item-success').removeClass('list-group-item-danger list-group-item-primary');
+            } else {
+                badge.addClass('bg-secondary');
+                $(this).removeClass('list-group-item-danger list-group-item-primary list-group-item-success');
+            }
+        });
+    }
+
+    function updateLogsUI(logs) {
+        if (logs.length === 0 && lastLogCount === 0) return;
+
+        var tbody = $('#logBody');
+        if (logs.length === 0) {
+            tbody.html('<tr><td colspan="3" class="text-muted text-center">로그 없음</td></tr>');
+            lastLogCount = 0;
+            return;
+        }
+
+        if (logs.length === lastLogCount) return;
+        lastLogCount = logs.length;
+
+        var html = '';
+        for (var i = 0; i < logs.length; i++) {
+            var log = logs[i];
+            var badgeClass = log.isError ? 'bg-danger' : 'bg-info';
+            html += '<tr' + (log.isError ? ' class="table-danger"' : '') + '>'
+                + '<td><small>' + log.timestamp + '</small></td>'
+                + '<td><span class="badge ' + badgeClass + '">' + log.step + '</span></td>'
+                + '<td><small>' + log.message + '</small></td>'
+                + '</tr>';
+        }
+        tbody.html(html);
+
+        // 자동 스크롤
+        var container = document.getElementById('logContainer');
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function startSequence() {
+        var data = {
+            nodeId: $('#nodeId').val(),
+            port: $('#port').val(),
+            jobType: $('#jobType').val()
+        };
+
+        $.ajax({
+            url: '/Sequence?handler=Start',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(data),
+            success: function (res) {
+                if (!res.success) {
+                    alert('시퀀스 시작 실패: ' + res.error);
+                }
+            },
+            error: function () {
+                alert('시퀀스 시작 요청 실패');
+            }
+        });
+    }
+
+    function executeStep(stepName) {
+        var data = {
+            step: stepName,
+            nodeId: $('#nodeId').val(),
+            port: $('#port').val(),
+            jobType: $('#jobType').val()
+        };
+
+        $.ajax({
+            url: '/Sequence?handler=ExecuteStep',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(data),
+            success: function (res) {
+                if (!res.success) {
+                    alert('Step 실행 실패: ' + res.error);
+                }
+            },
+            error: function () {
+                alert('Step 실행 요청 실패');
+            }
+        });
+    }
+
+    function abortSequence() {
+        if (!confirm('시퀀스를 중단하시겠습니까?')) return;
+
+        $.ajax({
+            url: '/Sequence?handler=Abort',
+            method: 'POST',
+            success: function (res) {
+                if (!res.success) {
+                    alert('중단 실패: ' + res.error);
+                }
+            }
+        });
+    }
+
+    function clearLogs() {
+        lastLogCount = 0;
+        $('#logBody').html('<tr><td colspan="3" class="text-muted text-center">로그 없음</td></tr>');
+    }
+
+    $(function () {
+        startPolling();
+    });
+</script>
+}

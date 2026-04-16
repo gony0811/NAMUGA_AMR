@@ -105,6 +105,15 @@ public class CobotService : BackgroundService
 
     #endregion
 
+    #region DO 읽기 (Discrete Input)
+
+    /// <summary>DO 비트 읽기 (index: 0~127)</summary>
+    public Task<bool[]> ReadDigitalOutputsAsync(ushort startIndex, ushort count, CancellationToken ct = default)
+        => _modbusClient.ReadRawDiscreteInputsAsync(
+            (ushort)(CobotRegisterMap.DiscreteInput.DigitalOutputStart + startIndex), count, ct);
+
+    #endregion
+
     #region 아날로그 입력 (Holding Register)
 
     /// <summary>AI 워드 쓰기 (index: 0~31)</summary>

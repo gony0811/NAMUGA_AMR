@@ -14,17 +14,20 @@ public class MainSequenceService : BackgroundService
 {
     private readonly AmrService _amrService;
     private readonly MqttService _mqttService;
+    private readonly MoveSequenceRunner _sequenceRunner;
     private readonly IDbContextFactory<AmrDbContext> _dbFactory;
     private readonly ILogger<MainSequenceService> _logger;
 
     public MainSequenceService(
         AmrService amrService,
         MqttService mqttService,
+        MoveSequenceRunner sequenceRunner,
         IDbContextFactory<AmrDbContext> dbFactory,
         ILogger<MainSequenceService> logger)
     {
         _amrService = amrService;
         _mqttService = mqttService;
+        _sequenceRunner = sequenceRunner;
         _dbFactory = dbFactory;
         _logger = logger;
     }
@@ -109,7 +112,16 @@ public class MainSequenceService : BackgroundService
             return;
         }
 
-        // 2. 현재 작업 상태 확인 (Idle 상태에서만 이동 명령 수행)
+        // 2. 시퀀스 실행 중 확인
+        if (_sequenceRunner.State.IsRunning)
+        {
+            _logger.LogWarning("시퀀스 실행 중에 moveCmd 수신: NodeId={NodeId}", command.NodeId);
+            await ReplyAsync(command.CmdId, "REJECTED", 11,
+                "시퀀스가 현재 실행 중입니다.", ct);
+            return;
+        }
+
+        // 3. 현재 작업 상태 확인 (Idle 상태에서만 이동 명령 수행)
         var status = await _amrService.ReadStatusAsync(ct);
         if (status.WorkStatus != WorkStatus.Idle)
         {
@@ -120,30 +132,10 @@ public class MainSequenceService : BackgroundService
             return;
         }
 
-        // 3. 위치 태그 매핑 조회
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var mapping = await db.LocationTagMappings
-            .FirstOrDefaultAsync(m => m.LocationTag == command.NodeId, ct);
-
-        if (mapping == null)
-        {
-            _logger.LogWarning("위치 태그 매핑을 찾을 수 없음: NodeId={NodeId}", command.NodeId);
-            await ReplyAsync(command.CmdId, "REJECTED", 20,
-                $"등록되지 않은 위치 태그입니다: {command.NodeId}", ct);
-            return;
-        }
-
-        // 4. Task/Job Index 설정 후 실행
-        _logger.LogInformation("이동 명령 실행: NodeId={NodeId} → TaskIndex={TaskIndex}, JobIndex={JobIndex}",
-            command.NodeId, mapping.TaskIndex, mapping.JobIndex);
-
-        await _amrService.SetTaskIndexAsync((ushort)mapping.TaskIndex, ct);
-        await _amrService.SetJobIndexAsync((ushort)mapping.JobIndex, ct);
-        await _amrService.SetExecutionControlAsync(ExecutionControl.Start, ct);
-
-        // 5. 정상 응답
-        await ReplyAsync(command.CmdId, "ACCEPTED", 0,
-            $"이동 명령 수락: {command.NodeId} (Task={mapping.TaskIndex}, Job={mapping.JobIndex})", ct);
+        // 4. 시퀀스 실행 (Fire-and-forget: 시퀀스는 백그라운드에서 진행)
+        _logger.LogInformation("Move 시퀀스 시작: NodeId={NodeId}, Port={Port}, JobType={JobType}",
+            command.NodeId, command.Port, command.JobType);
+        _ = _sequenceRunner.RunSequenceAsync(command, ct);
     }
 
     private async Task ReplyAsync(string cmdId, string status, int resultCode, string message, CancellationToken ct)

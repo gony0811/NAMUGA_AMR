@@ -16,7 +16,9 @@
       "Bash(sips -c 3500 2300 /tmp/io_list.png --out /tmp/io_full.png)",
       "Bash(sips -Z 1400 /tmp/io_full.png --out /tmp/io_full_s.png)",
       "Bash(brew list *)",
-      "Bash(sips *)"
+      "Bash(sips *)",
+      "Bash(grep -r \"btn-info\\\\|btn-warning\\\\|btn-success\\\\|btn-danger\" /Users/sean/Documents/GitHub/NAMUGA_AMR/AMR.Web/Pages/*.cshtml)",
+      "Bash(grep \"\\\\.cs$\")"
     ]
   }
 }
