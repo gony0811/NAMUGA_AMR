@@ -105,6 +105,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<CobotService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<IoModuleService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MqttService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MainSequenceService>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SignalTowerService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CameraService>());
 
 // SQLite 데이터베이스 설정

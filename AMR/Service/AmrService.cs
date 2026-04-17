@@ -23,6 +23,9 @@ public class AmrService : BackgroundService
     /// <summary>Modbus TCP 연결 상태</summary>
     public bool IsConnected => _modbusClient.IsConnected;
 
+    /// <summary>마지막으로 읽은 로봇 상태 (ReadStatusAsync 호출 시 자동 갱신)</summary>
+    public RobotStatus? LastStatus { get; private set; }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("AmrService 시작");
@@ -64,8 +67,12 @@ public class AmrService : BackgroundService
     #region 상태 읽기
 
     /// <summary>전체 로봇 상태 읽기</summary>
-    public Task<RobotStatus> ReadStatusAsync(CancellationToken ct = default)
-        => _modbusClient.ReadRobotStatusAsync(ct);
+    public async Task<RobotStatus> ReadStatusAsync(CancellationToken ct = default)
+    {
+        var status = await _modbusClient.ReadRobotStatusAsync(ct);
+        LastStatus = status;
+        return status;
+    }
 
     /// <summary>전원 상태 읽기</summary>
     public Task<PowerState> ReadPowerStateAsync(CancellationToken ct = default)
