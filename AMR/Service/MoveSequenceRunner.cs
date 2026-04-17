@@ -266,13 +266,33 @@ public class MoveSequenceRunner
             $"AMR 이동 명령: NodeId={command.NodeId} → Task={mapping.TaskIndex}, Job={mapping.JobIndex}");
     }
 
-    /// <summary>Step 4: AMR 도착 대기 — WorkStatus가 Idle이 될 때까지 polling</summary>
+    /// <summary>Step 4: AMR 도착 대기 — RobotState가 Started→Stopped 전이를 확인하여 도착 판단</summary>
     private async Task Step_WaitArrival(CancellationToken ct)
     {
         AddLog(SequenceStep.WaitArrival, "AMR 도착 대기 시작");
 
         var deadline = DateTime.Now.AddSeconds(ArrivalTimeoutSeconds);
 
+        // Phase 1: RobotState가 Started가 될 때까지 대기 (이동 시작 확인)
+        while (!ct.IsCancellationRequested)
+        {
+            if (DateTime.Now > deadline)
+                throw new TimeoutException($"AMR 이동 시작 대기 타임아웃 ({ArrivalTimeoutSeconds}초)");
+
+            var status = await _amrService.ReadStatusAsync(ct);
+
+            if (status.RobotState == RobotState.Started)
+            {
+                AddLog(SequenceStep.WaitArrival, "AMR 이동 시작 확인 (RobotState=Started)");
+                break;
+            }
+
+            await Task.Delay(PollIntervalMs, ct);
+        }
+
+        ct.ThrowIfCancellationRequested();
+
+        // Phase 2: RobotState가 Stopped가 될 때까지 대기 (이동 완료 확인)
         while (!ct.IsCancellationRequested)
         {
             if (DateTime.Now > deadline)
@@ -280,9 +300,9 @@ public class MoveSequenceRunner
 
             var status = await _amrService.ReadStatusAsync(ct);
 
-            if (status.WorkStatus == WorkStatus.Idle)
+            if (status.RobotState == RobotState.Stopped)
             {
-                AddLog(SequenceStep.WaitArrival, "AMR 도착 완료 (WorkStatus=Idle)");
+                AddLog(SequenceStep.WaitArrival, "AMR 도착 완료 (RobotState=Stopped)");
                 return;
             }
 
