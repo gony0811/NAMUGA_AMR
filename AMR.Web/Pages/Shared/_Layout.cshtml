@@ -10,8 +10,44 @@
     <link rel="stylesheet" href="~/AMR.Web.styles.css" asp-append-version="true" />
 </head>
 <body>
+    <!-- Status Ribbon -->
+    <div id="status-ribbon" class="d-flex align-items-center px-3 gap-4 text-white" style="background:#2c3e50; height:32px; font-size:0.78rem; overflow-x:auto; white-space:nowrap;">
+        <!-- AMR Status -->
+        <span class="d-flex align-items-center gap-1">
+            <i class="bi bi-robot"></i> AMR
+            <span id="rb-robot-state" class="badge bg-secondary">--</span>
+            <span id="rb-work-status" class="badge bg-secondary">--</span>
+        </span>
+        <!-- Cobot -->
+        <span class="d-flex align-items-center gap-1">
+            <i class="bi bi-gear"></i> Cobot
+            <span id="rb-cobot-mode" class="badge bg-secondary">--</span>
+            <span id="rb-cobot-prog" class="badge bg-secondary">--</span>
+        </span>
+        <!-- Tower Lamp -->
+        <span class="d-flex align-items-center gap-1">
+            <i class="bi bi-lightbulb"></i>
+            <i id="rb-lamp-green" class="bi bi-circle-fill" style="color:#555; font-size:0.7rem;"></i>
+            <i id="rb-lamp-yellow" class="bi bi-circle-fill" style="color:#555; font-size:0.7rem;"></i>
+            <i id="rb-lamp-red" class="bi bi-circle-fill" style="color:#555; font-size:0.7rem;"></i>
+        </span>
+        <!-- Port Detection -->
+        <span class="d-flex align-items-center gap-1">
+            <i class="bi bi-box-seam"></i>
+            <span id="rb-port1" class="badge bg-secondary">P1</span>
+            <span id="rb-port2" class="badge bg-secondary">P2</span>
+            <span id="rb-port3" class="badge bg-secondary">P3</span>
+            <span id="rb-port4" class="badge bg-secondary">P4</span>
+        </span>
+        <!-- Battery -->
+        <span class="d-flex align-items-center gap-1">
+            <i id="rb-batt-icon" class="bi bi-battery-half"></i>
+            <span id="rb-battery">--%</span>
+        </span>
+    </div>
+
     <header>
-        <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
+        <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3" style="margin-top:0;">
             <div class="container">
                 <a class="navbar-brand" asp-area="" asp-page="/Index">AMR.Web</a>
                 <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
@@ -66,5 +102,59 @@
     <script src="~/js/site.js" asp-append-version="true"></script>
 
     @await RenderSectionAsync("Scripts", required: false)
+
+    <script>
+        (function () {
+            function pollRibbon() {
+                $.getJSON('/StatusRibbon?handler=Status', function (res) {
+                    if (!res.success) return;
+                    var d = res.data;
+
+                    // AMR
+                    var $rs = $('#rb-robot-state');
+                    $rs.text(d.amrConnected ? d.robotState : 'OFF');
+                    $rs.attr('class', 'badge ' + (d.amrConnected
+                        ? (d.robotState === 'Started' ? 'bg-success' : d.robotState === 'Paused' ? 'bg-warning text-dark' : 'bg-info')
+                        : 'bg-dark'));
+
+                    var $ws = $('#rb-work-status');
+                    $ws.text(d.amrConnected ? d.workStatus : '--');
+                    $ws.attr('class', 'badge ' + (d.workStatus === 'Moving' ? 'bg-primary' : 'bg-secondary'));
+
+                    // Cobot mode
+                    var $cm = $('#rb-cobot-mode');
+                    $cm.text(d.cobotConnected ? d.cobotAutoManual : 'OFF');
+                    $cm.attr('class', 'badge ' + (d.cobotConnected
+                        ? (d.cobotAutoManual === 'Auto' ? 'bg-success' : 'bg-warning text-dark')
+                        : 'bg-dark'));
+
+                    // Cobot program
+                    var $cp = $('#rb-cobot-prog');
+                    $cp.text(d.cobotConnected ? d.cobotProgram : '--');
+                    $cp.attr('class', 'badge ' + (d.cobotProgram === 'Run' ? 'bg-success' : d.cobotProgram === 'Stop' ? 'bg-danger' : 'bg-secondary'));
+
+                    // Tower lamp
+                    $('#rb-lamp-green').css('color', d.lampGreen ? '#2ecc71' : '#555');
+                    $('#rb-lamp-yellow').css('color', d.lampYellow ? '#f1c40f' : '#555');
+                    $('#rb-lamp-red').css('color', d.lampRed ? '#e74c3c' : '#555');
+
+                    // Port detection
+                    ['port1','port2','port3','port4'].forEach(function(p, i) {
+                        var $el = $('#rb-' + p);
+                        $el.attr('class', 'badge ' + (d[p] ? 'bg-success' : 'bg-secondary'));
+                    });
+
+                    // Battery
+                    var batt = d.batteryLevel;
+                    $('#rb-battery').text(d.amrConnected ? batt.toFixed(1) + '%' : '--%');
+                    var icon = batt >= 75 ? 'bi-battery-full' : batt >= 40 ? 'bi-battery-half' : batt >= 10 ? 'bi-battery-low' : 'bi-battery';
+                    $('#rb-batt-icon').attr('class', 'bi ' + icon).css('color', batt < 20 ? '#e74c3c' : batt < 40 ? '#f1c40f' : '#2ecc71');
+                });
+            }
+
+            pollRibbon();
+            setInterval(pollRibbon, 2000);
+        })();
+    </script>
 </body>
 </html>

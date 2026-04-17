@@ -1,3 +1,4 @@
+using System.Text;
 using AMR;
 using AMR.Communication;
 using AMR.Data;
@@ -7,6 +8,8 @@ using Autofac;
 using Autofac.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+
+Console.OutputEncoding = Encoding.UTF8;
 
 var builder = WebApplication.CreateBuilder(args);
 

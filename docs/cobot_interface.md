@@ -6,10 +6,10 @@
 -- DI 입력 (AMR PC → 로봇)
 -- DI0~3:   AMR PICK 슬롯1~4
 -- DI4~7:   AMR PLACE 슬롯1~4
--- DI8~9:  설비포트 Loading 슬롯1~2
--- DI10~11: 설비포트 Unloading 슬롯1~2
--- DI12~13: 자재포트 Loading 슬롯1~2
--- DI14~15: 자재포트 Unloading 슬롯1~2
+-- DI8~9:  설비포트 PLACE 슬롯1~2
+-- DI10~11: 설비포트 PICK 슬롯1~2
+-- DI12~13: 자재포트 PLACE 슬롯1~2
+-- DI14~15: 자재포트 PICK 슬롯1~2
 -- DI16:    설비포트 QR 스캔
 -- DI17:    자재포트 QR 스캔
 -- DI25:    Home

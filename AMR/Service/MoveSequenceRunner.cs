@@ -208,7 +208,7 @@ public class MoveSequenceRunner
                 await Step_CobotPickup(command, ct);
                 break;
             case SequenceStep.CobotPlace:
-                await Step_CobotPlace(ct);
+                await Step_CobotPlace(command, ct);
                 break;
             case SequenceStep.Complete:
                 await Step_Complete(command, ct);
@@ -356,43 +356,54 @@ public class MoveSequenceRunner
             AddLog(SequenceStep.CameraQrRead, "QR 미감지 — offset (0, 0, 0) 전달", true);
         }
 
-        // offset 값을 Cobot AI 레지스터에 전달 (mm 단위, ushort 변환)
-        var dx = (ushort)Math.Clamp((int)qrResult.RealDeltaXMm, 0, ushort.MaxValue);
-        var dy = (ushort)Math.Clamp((int)qrResult.RealDeltaYMm, 0, ushort.MaxValue);
-        var dTheta = (ushort)Math.Clamp((int)(qrResult.RotationAngle * 100), 0, ushort.MaxValue);
+        // offset 값을 Cobot AI 레지스터에 전달 (mm 단위, short → ushort 비트 변환)
+        var dx = (short)Math.Clamp((int)qrResult.RealDeltaXMm, short.MinValue, short.MaxValue);
+        var dy = (short)Math.Clamp((int)qrResult.RealDeltaYMm, short.MinValue, short.MaxValue);
+        var dTheta = (short)Math.Clamp((int)(qrResult.RotationAngle * 100), short.MinValue, short.MaxValue);
 
-        await _cobotService.WriteAnalogInputAsync(0, dx, ct);  // AI0: dx
-        await _cobotService.WriteAnalogInputAsync(1, dy, ct);  // AI1: dy
-        await _cobotService.WriteAnalogInputAsync(2, dTheta, ct); // AI2: dTheta
+        await _cobotService.WriteAnalogInputAsync(0, unchecked((ushort)dx), ct);  // AI0: dx
+        await _cobotService.WriteAnalogInputAsync(1, unchecked((ushort)dy), ct);  // AI1: dy
+        await _cobotService.WriteAnalogInputAsync(2, unchecked((ushort)dTheta), ct); // AI2: dTheta
 
         AddLog(SequenceStep.CameraQrRead,
             $"QR offset 전달: dx={dx}mm, dy={dy}mm, dTheta={dTheta} (Detected={qrResult.Detected})");
     }
 
-    /// <summary>Step 8: port 위치에서 PICKUP 수행</summary>
+    /// <summary>Step 8: PICK 수행 — JobType에 따라 PICK 대상 결정</summary>
     private async Task Step_CobotPickup(AmrCommand command, CancellationToken ct)
     {
-        // 초기 구현: 설비포트 Loading slot 1 (DI8) 사용
-        // 향후 jobType/port type에 따라 분기:
-        //   설비포트 Loading: DI8~9
-        //   설비포트 Unloading: DI10~11
-        //   자재포트 Loading: DI12~13
-        //   자재포트 Unloading: DI14~15
-        ushort pickupDiIndex = 8; // 설비포트 Loading slot 1
+        // LOAD:   AMR → 설비 (AMR에서 PICK → 설비에 PLACE)
+        // UNLOAD: 설비 → AMR (설비에서 PICK → AMR에 PLACE)
+        //   AMR PICK: DI0~3 (슬롯1~4)
+        //   AMR PLACE: DI4~7 (슬롯1~4)
+        //   설비포트 PLACE: DI8~9
+        //   설비포트 PICK: DI10~11
+        //   자재포트 PLACE: DI12~13
+        //   자재포트 PICK: DI14~15
+        var isLoad = string.Equals(command.JobType, "LOAD", StringComparison.OrdinalIgnoreCase);
+        ushort pickDiIndex = isLoad
+            ? (ushort)0   // LOAD: AMR PICK slot 1 (DI0)
+            : (ushort)10; // UNLOAD: 설비포트 PICK slot 1 (DI10)
 
-        AddLog(SequenceStep.CobotPickup, $"PICKUP 시작 (DI{pickupDiIndex})");
-        await SendCobotCommandAndWaitAsync(pickupDiIndex, "PICKUP", ct);
-        AddLog(SequenceStep.CobotPickup, "PICKUP 완료");
+        var pickTarget = isLoad ? "AMR PICK slot 1" : "설비포트 PICK slot 1";
+
+        AddLog(SequenceStep.CobotPickup, $"PICK 시작 (DI{pickDiIndex}, {pickTarget})");
+        await SendCobotCommandAndWaitAsync(pickDiIndex, $"PICK ({pickTarget})", ct);
+        AddLog(SequenceStep.CobotPickup, "PICK 완료");
     }
 
-    /// <summary>Step 9: AMR Port 1에 PLACE 수행</summary>
-    private async Task Step_CobotPlace(CancellationToken ct)
+    /// <summary>Step 9: PLACE 수행 — JobType에 따라 PLACE 대상 결정</summary>
+    private async Task Step_CobotPlace(AmrCommand command, CancellationToken ct)
     {
-        // DI4: AMR PLACE slot 1
-        ushort placeDiIndex = 4;
+        var isLoad = string.Equals(command.JobType, "LOAD", StringComparison.OrdinalIgnoreCase);
+        ushort placeDiIndex = isLoad
+            ? (ushort)8  // LOAD: 설비포트 PLACE slot 1 (DI8)
+            : (ushort)4; // UNLOAD: AMR PLACE slot 1 (DI4)
 
-        AddLog(SequenceStep.CobotPlace, $"PLACE 시작 (DI{placeDiIndex}, AMR Port 1)");
-        await SendCobotCommandAndWaitAsync(placeDiIndex, "PLACE (AMR Port 1)", ct);
+        var placeTarget = isLoad ? "설비포트 PLACE slot 1" : "AMR PLACE slot 1";
+
+        AddLog(SequenceStep.CobotPlace, $"PLACE 시작 (DI{placeDiIndex}, {placeTarget})");
+        await SendCobotCommandAndWaitAsync(placeDiIndex, $"PLACE ({placeTarget})", ct);
         AddLog(SequenceStep.CobotPlace, "PLACE 완료");
     }
 
@@ -422,25 +433,54 @@ public class MoveSequenceRunner
 
     #region 헬퍼
 
-    /// <summary>Cobot DI 명령 전송 후 DO1(Complete) 또는 DO2(Error) 대기</summary>
+    /// <summary>Cobot DI 명령 전송 후 DO0(Busy) 확인 → DI OFF → DO1(Complete) 또는 DO2(Error) 대기</summary>
     private async Task SendCobotCommandAndWaitAsync(ushort diIndex, string description, CancellationToken ct)
     {
         if (!_cobotService.IsConnected)
             throw new InvalidOperationException($"Cobot 미연결 상태에서 명령 시도: {description}");
 
-        // DI ON
+        // DI ON — 명령 전송
         await _cobotService.WriteDigitalInputAsync(diIndex, true, ct);
 
         var deadline = DateTime.Now.AddSeconds(CobotTimeoutSeconds);
 
         try
         {
+            // Phase 1: DO0(Busy) 대기 — Cobot이 명령을 수신했는지 확인
             while (!ct.IsCancellationRequested)
             {
                 if (DateTime.Now > deadline)
-                    throw new TimeoutException($"Cobot 응답 타임아웃 ({CobotTimeoutSeconds}초): {description}");
+                    throw new TimeoutException($"Cobot Busy 대기 타임아웃 ({CobotTimeoutSeconds}초): {description}");
 
-                // DO0=Busy, DO1=Complete, DO2=Error
+                var dos = await _cobotService.ReadDigitalOutputsAsync(0, 3, ct);
+
+                if (dos[2]) // DO2: Error
+                    throw new Exception($"Cobot 에러 발생: {description}");
+
+                if (dos[0]) // DO0: Busy — 명령 수신 확인
+                    break;
+
+                await Task.Delay(PollIntervalMs, ct);
+            }
+
+            ct.ThrowIfCancellationRequested();
+
+            // Busy 확인 → 명령 DI OFF
+            try
+            {
+                await _cobotService.WriteDigitalInputAsync(diIndex, false, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Busy 확인 후 DI{DiIndex} OFF 실패", diIndex);
+            }
+
+            // Phase 2: DO1(Complete) 또는 DO2(Error) 대기
+            while (!ct.IsCancellationRequested)
+            {
+                if (DateTime.Now > deadline)
+                    throw new TimeoutException($"Cobot 완료 대기 타임아웃 ({CobotTimeoutSeconds}초): {description}");
+
                 var dos = await _cobotService.ReadDigitalOutputsAsync(0, 3, ct);
 
                 if (dos[2]) // DO2: Error
@@ -456,7 +496,7 @@ public class MoveSequenceRunner
         }
         finally
         {
-            // DI OFF (에러 발생 시에도 반드시 OFF)
+            // 안전장치: Phase 1에서 예외 발생 시에도 DI OFF 보장
             try
             {
                 await _cobotService.WriteDigitalInputAsync(diIndex, false, CancellationToken.None);
