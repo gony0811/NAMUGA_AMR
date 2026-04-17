@@ -24,6 +24,7 @@ public class MoveSequenceRunner
     private readonly SemaphoreSlim _runLock = new(1, 1);
     private readonly ConcurrentQueue<SequenceLogEntry> _logs = new();
     private CancellationTokenSource? _sequenceCts;
+    private CancellationTokenSource? _demoCts;
 
     private const int MaxLogEntries = 200;
     private const int ArrivalTimeoutSeconds = 120;
@@ -143,7 +144,9 @@ public class MoveSequenceRunner
                 Command = "moveCmd",
                 NodeId = State.NodeId ?? "N0001",
                 Port = State.Port,
-                JobType = State.JobType
+                JobType = State.JobType,
+                PortType = State.PortType,
+                AmrSlot = State.AmrSlot
             };
 
             await ExecuteStepInternalAsync(step, cmd, ct);
@@ -169,6 +172,100 @@ public class MoveSequenceRunner
             _sequenceCts.Cancel();
             AddLog(State.CurrentStep, "시퀀스 중단 요청", true);
             _logger.LogWarning("시퀀스 중단 요청");
+        }
+    }
+
+    /// <summary>데모 모드 실행 — N001/N006에서 LOAD↔UNLOAD 반복</summary>
+    public async Task RunDemoAsync(CancellationToken ct)
+    {
+        if (State.IsDemoRunning || State.IsRunning)
+        {
+            _logger.LogWarning("데모 시작 불가 — 이미 실행 중");
+            return;
+        }
+
+        _demoCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var demoToken = _demoCts.Token;
+
+        State.IsDemoRunning = true;
+        State.DemoCycle = 0;
+        State.DemoStepIndex = 0;
+        AddLog(SequenceStep.Idle, "===== 데모 모드 시작 =====");
+
+        var demoSequences = new[]
+        {
+            new { NodeId = "N001", JobType = "LOAD",   PortType = "MATERIAL", Port = "LEFT", AmrSlot = 1 },
+            new { NodeId = "N001", JobType = "UNLOAD", PortType = "MATERIAL", Port = "LEFT", AmrSlot = 1 },
+            new { NodeId = "N006", JobType = "LOAD",   PortType = "MATERIAL", Port = "LEFT", AmrSlot = 1 },
+            new { NodeId = "N006", JobType = "UNLOAD", PortType = "MATERIAL", Port = "LEFT", AmrSlot = 1 },
+        };
+
+        try
+        {
+            while (!demoToken.IsCancellationRequested)
+            {
+                State.DemoCycle++;
+
+                for (int i = 0; i < demoSequences.Length; i++)
+                {
+                    demoToken.ThrowIfCancellationRequested();
+
+                    State.DemoStepIndex = i;
+                    var seq = demoSequences[i];
+
+                    var command = new AmrCommand
+                    {
+                        CmdId = $"demo_{State.DemoCycle}_{i + 1}_{DateTime.Now:HHmmss_fff}",
+                        Command = "moveCmd",
+                        NodeId = seq.NodeId,
+                        JobType = seq.JobType,
+                        PortType = seq.PortType,
+                        Port = seq.Port,
+                        AmrSlot = seq.AmrSlot
+                    };
+
+                    AddLog(SequenceStep.Idle,
+                        $"[데모 Cycle {State.DemoCycle} - {i + 1}/4] {seq.NodeId} {seq.JobType} 시작");
+
+                    await RunSequenceAsync(command, demoToken);
+
+                    // 시퀀스 실패 시 데모 중단
+                    if (State.CurrentStep == SequenceStep.Faulted)
+                    {
+                        AddLog(SequenceStep.Faulted, "데모 모드 중단 — 시퀀스 실패", true);
+                        return;
+                    }
+
+                    // 다음 시퀀스 전 짧은 대기
+                    if (!demoToken.IsCancellationRequested)
+                        await Task.Delay(2000, demoToken);
+                }
+
+                AddLog(SequenceStep.Idle, $"데모 Cycle {State.DemoCycle} 완료 — 다음 사이클 시작");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            AddLog(SequenceStep.Idle, "데모 모드 정지 요청 — 중지됨");
+            _logger.LogInformation("데모 모드 정지");
+        }
+        finally
+        {
+            State.IsDemoRunning = false;
+            _demoCts?.Dispose();
+            _demoCts = null;
+            AddLog(SequenceStep.Idle, "===== 데모 모드 종료 =====");
+        }
+    }
+
+    /// <summary>데모 모드 정지 — 현재 시퀀스 완료 후 중단</summary>
+    public void StopDemo()
+    {
+        if (_demoCts is { IsCancellationRequested: false })
+        {
+            _demoCts.Cancel();
+            AddLog(SequenceStep.Idle, "데모 모드 정지 요청");
+            _logger.LogWarning("데모 모드 정지 요청");
         }
     }
 
@@ -223,9 +320,11 @@ public class MoveSequenceRunner
         State.NodeId = command.NodeId;
         State.Port = command.Port;
         State.JobType = command.JobType;
+        State.PortType = command.PortType;
+        State.AmrSlot = command.AmrSlot;
 
         AddLog(SequenceStep.MoveCmdReceived,
-            $"MoveCmd 수신: NodeId={command.NodeId}, Port={command.Port ?? "없음"}, JobType={command.JobType ?? "없음"}");
+            $"MoveCmd 수신: NodeId={command.NodeId}, Port={command.Port ?? "없음"}, JobType={command.JobType ?? "없음"}, PortType={command.PortType ?? "없음"}, AmrSlot={command.AmrSlot}");
 
         return Task.CompletedTask;
     }
@@ -312,35 +411,50 @@ public class MoveSequenceRunner
         ct.ThrowIfCancellationRequested();
     }
 
-    /// <summary>Step 5: ActionCmd 대기 — 초기 구현은 스킵 처리</summary>
-    private Task Step_WaitActionCmd(AmrCommand command, CancellationToken ct)
+    /// <summary>Step 5: ActionCmd 대기 — 설비포트면 대기, 자재포트면 스킵</summary>
+    private async Task Step_WaitActionCmd(AmrCommand command, CancellationToken ct)
     {
-        var port = command.Port?.ToUpperInvariant();
+        var isFacility = string.Equals(command.PortType, "FACILITY", StringComparison.OrdinalIgnoreCase);
 
-        if (port is "LEFT" or "RIGHT")
-        {
-            // TODO: ActionCmd 수신 대기 구현 (TaskCompletionSource)
-            AddLog(SequenceStep.WaitActionCmd,
-                $"ActionCmd 대기 스킵 (Port={port}, 향후 구현 예정)");
-        }
-        else
+        if (!isFacility)
         {
             AddLog(SequenceStep.WaitActionCmd,
-                "Port 미지정 — ActionCmd 대기 없이 다음 단계 진행");
+                $"자재포트 — ActionCmd 대기 없이 다음 단계 진행 (PortType={command.PortType ?? "없음"})");
+            return;
         }
 
-        return Task.CompletedTask;
+        // 설비포트: ActionCmd 수신 대기
+        AddLog(SequenceStep.WaitActionCmd, "설비포트 — ActionCmd 수신 대기 시작");
+
+        var deadline = DateTime.Now.AddSeconds(ArrivalTimeoutSeconds);
+
+        while (!ct.IsCancellationRequested)
+        {
+            if (DateTime.Now > deadline)
+                throw new TimeoutException($"ActionCmd 수신 타임아웃 ({ArrivalTimeoutSeconds}초)");
+
+            if (_mqttService.TryDequeueActionCmd(out var actionCmd))
+            {
+                AddLog(SequenceStep.WaitActionCmd,
+                    $"ActionCmd 수신 완료 (CmdId={actionCmd.CmdId})");
+                return;
+            }
+
+            await Task.Delay(PollIntervalMs, ct);
+        }
+
+        ct.ThrowIfCancellationRequested();
     }
 
     /// <summary>Step 6: Cobot을 QR 코드 읽기 위치로 이동</summary>
     private async Task Step_CobotQrPosition(AmrCommand command, CancellationToken ct)
     {
-        // port 정보로 QR 스캔 위치 결정: DI16=설비포트, DI17=자재포트
-        // 초기 구현: 설비포트(DI16) 기본 사용
-        ushort qrDiIndex = 16; // 설비포트 QR 스캔
+        // TODO: 자재포트 티칭 완료 후 DI17 분기 추가
+        // 현재는 설비/자재 모두 설비포트 QR 위치(DI16) 사용
+        ushort qrDiIndex = 16;
 
-        AddLog(SequenceStep.CobotQrPosition, $"Cobot QR 읽기 위치 이동 (DI{qrDiIndex})");
-        await SendCobotCommandAndWaitAsync(qrDiIndex, "QR 읽기 위치 이동", ct);
+        AddLog(SequenceStep.CobotQrPosition, $"Cobot QR 읽기 위치 이동 (DI{qrDiIndex}, 설비포트)");
+        await SendCobotCommandAndWaitAsync(qrDiIndex, "QR 읽기 위치 이동 (설비포트)", ct);
         AddLog(SequenceStep.CobotQrPosition, "Cobot QR 읽기 위치 이동 완료");
     }
 
@@ -369,38 +483,67 @@ public class MoveSequenceRunner
             $"QR offset 전달: dx={dx}mm, dy={dy}mm, dTheta={dTheta} (Detected={qrResult.Detected})");
     }
 
-    /// <summary>Step 8: PICK 수행 — JobType에 따라 PICK 대상 결정</summary>
+    /// <summary>Step 8: PICK 수행 — JobType/PortType/Port/AmrSlot에 따라 DI 결정</summary>
     private async Task Step_CobotPickup(AmrCommand command, CancellationToken ct)
     {
-        // LOAD:   AMR → 설비 (AMR에서 PICK → 설비에 PLACE)
-        // UNLOAD: 설비 → AMR (설비에서 PICK → AMR에 PLACE)
-        //   AMR PICK: DI0~3 (슬롯1~4)
-        //   AMR PLACE: DI4~7 (슬롯1~4)
-        //   설비포트 PLACE: DI8~9
-        //   설비포트 PICK: DI10~11
-        //   자재포트 PLACE: DI12~13
-        //   자재포트 PICK: DI14~15
+        // DI 매핑:
+        //   AMR PICK: DI0~3 (슬롯1~4)       AMR PLACE: DI4~7 (슬롯1~4)
+        //   설비포트 PLACE: DI8~9 (슬롯1~2)  설비포트 PICK: DI10~11 (슬롯1~2)
+        //   자재포트 PLACE: DI12~13 (슬롯1~2) 자재포트 PICK: DI14~15 (슬롯1~2)
+        // LEFT → 슬롯1, RIGHT → 슬롯2
         var isLoad = string.Equals(command.JobType, "LOAD", StringComparison.OrdinalIgnoreCase);
-        ushort pickDiIndex = isLoad
-            ? (ushort)0   // LOAD: AMR PICK slot 1 (DI0)
-            : (ushort)10; // UNLOAD: 설비포트 PICK slot 1 (DI10)
+        var isFacility = string.Equals(command.PortType, "FACILITY", StringComparison.OrdinalIgnoreCase);
+        var portSlotOffset = string.Equals(command.Port, "RIGHT", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        var amrSlotOffset = Math.Clamp(command.AmrSlot, 1, 4) - 1;
 
-        var pickTarget = isLoad ? "AMR PICK slot 1" : "설비포트 PICK slot 1";
+        ushort pickDiIndex;
+        string pickTarget;
+
+        if (isLoad)
+        {
+            // LOAD: AMR에서 PICK → DI0 + amrSlotOffset
+            pickDiIndex = (ushort)(0 + amrSlotOffset);
+            pickTarget = $"AMR PICK slot {command.AmrSlot}";
+        }
+        else
+        {
+            // UNLOAD: 설비/자재포트에서 PICK
+            // TODO: 자재포트 티칭 완료 후 DI14~15 분기 추가
+            // 현재는 설비/자재 모두 설비포트 PICK DI(DI10~11) 사용
+            pickDiIndex = (ushort)(10 + portSlotOffset);
+            pickTarget = $"설비포트 PICK slot {portSlotOffset + 1}";
+        }
 
         AddLog(SequenceStep.CobotPickup, $"PICK 시작 (DI{pickDiIndex}, {pickTarget})");
         await SendCobotCommandAndWaitAsync(pickDiIndex, $"PICK ({pickTarget})", ct);
         AddLog(SequenceStep.CobotPickup, "PICK 완료");
     }
 
-    /// <summary>Step 9: PLACE 수행 — JobType에 따라 PLACE 대상 결정</summary>
+    /// <summary>Step 9: PLACE 수행 — JobType/PortType/Port/AmrSlot에 따라 DI 결정</summary>
     private async Task Step_CobotPlace(AmrCommand command, CancellationToken ct)
     {
         var isLoad = string.Equals(command.JobType, "LOAD", StringComparison.OrdinalIgnoreCase);
-        ushort placeDiIndex = isLoad
-            ? (ushort)8  // LOAD: 설비포트 PLACE slot 1 (DI8)
-            : (ushort)4; // UNLOAD: AMR PLACE slot 1 (DI4)
+        var isFacility = string.Equals(command.PortType, "FACILITY", StringComparison.OrdinalIgnoreCase);
+        var portSlotOffset = string.Equals(command.Port, "RIGHT", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        var amrSlotOffset = Math.Clamp(command.AmrSlot, 1, 4) - 1;
 
-        var placeTarget = isLoad ? "설비포트 PLACE slot 1" : "AMR PLACE slot 1";
+        ushort placeDiIndex;
+        string placeTarget;
+
+        if (isLoad)
+        {
+            // LOAD: 설비/자재포트에 PLACE
+            // TODO: 자재포트 티칭 완료 후 DI12~13 분기 추가
+            // 현재는 설비/자재 모두 설비포트 PLACE DI(DI8~9) 사용
+            placeDiIndex = (ushort)(8 + portSlotOffset);
+            placeTarget = $"설비포트 PLACE slot {portSlotOffset + 1}";
+        }
+        else
+        {
+            // UNLOAD: AMR에 PLACE → DI4 + amrSlotOffset
+            placeDiIndex = (ushort)(4 + amrSlotOffset);
+            placeTarget = $"AMR PLACE slot {command.AmrSlot}";
+        }
 
         AddLog(SequenceStep.CobotPlace, $"PLACE 시작 (DI{placeDiIndex}, {placeTarget})");
         await SendCobotCommandAndWaitAsync(placeDiIndex, $"PLACE ({placeTarget})", ct);

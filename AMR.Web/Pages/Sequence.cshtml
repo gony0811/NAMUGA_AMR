@@ -26,19 +26,36 @@
                             <input type="text" id="nodeId" class="form-control form-control-sm" value="N0001" />
                         </div>
                         <div class="col-4">
-                            <label class="form-label form-label-sm">Port</label>
-                            <select id="port" class="form-select form-select-sm">
-                                <option value="">없음</option>
-                                <option value="LEFT">LEFT</option>
-                                <option value="RIGHT">RIGHT</option>
-                            </select>
-                        </div>
-                        <div class="col-4">
                             <label class="form-label form-label-sm">JobType</label>
                             <select id="jobType" class="form-select form-select-sm">
                                 <option value="">없음</option>
                                 <option value="LOAD">LOAD</option>
                                 <option value="UNLOAD">UNLOAD</option>
+                            </select>
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label form-label-sm">PortType</label>
+                            <select id="portType" class="form-select form-select-sm">
+                                <option value="FACILITY">설비포트</option>
+                                <option value="MATERIAL">자재포트</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-4">
+                            <label class="form-label form-label-sm">Port (슬롯)</label>
+                            <select id="port" class="form-select form-select-sm">
+                                <option value="LEFT">LEFT (슬롯1)</option>
+                                <option value="RIGHT">RIGHT (슬롯2)</option>
+                            </select>
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label form-label-sm">AMR Slot</label>
+                            <select id="amrSlot" class="form-select form-select-sm">
+                                <option value="1">Port 1</option>
+                                <option value="2">Port 2</option>
+                                <option value="3">Port 3</option>
+                                <option value="4">Port 4</option>
                             </select>
                         </div>
                     </div>
@@ -53,6 +70,30 @@
                 </div>
             </div>
 
+            @* 데모 모드 카드 *@
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Demo Mode</h5>
+                    <span id="demoStatus" class="badge bg-secondary">Stopped</span>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-2">
+                        N001 ↔ N006 자재포트 LEFT / AMR Port1 LOAD·UNLOAD 반복
+                    </p>
+                    <div class="d-flex gap-2 mb-2">
+                        <button id="btnStartDemo" class="btn btn-success btn-sm flex-fill" onclick="startDemo()">
+                            <i class="bi bi-arrow-repeat"></i> Start Demo
+                        </button>
+                        <button id="btnStopDemo" class="btn btn-outline-danger btn-sm flex-fill" onclick="stopDemo()" disabled>
+                            <i class="bi bi-stop-circle"></i> Stop Demo
+                        </button>
+                    </div>
+                    <div id="demoInfo" class="small text-muted d-none">
+                        <span id="demoCycleInfo"></span>
+                    </div>
+                </div>
+            </div>
+
             @* 현재 상태 정보 *@
             <div class="card mb-3">
                 <div class="card-header">
@@ -62,8 +103,10 @@
                     <table class="table table-sm table-borderless mb-0">
                         <tr><td class="text-muted" style="width:100px">CmdId</td><td id="infoCmdId">-</td></tr>
                         <tr><td class="text-muted">NodeId</td><td id="infoNodeId">-</td></tr>
-                        <tr><td class="text-muted">Port</td><td id="infoPort">-</td></tr>
                         <tr><td class="text-muted">JobType</td><td id="infoJobType">-</td></tr>
+                        <tr><td class="text-muted">PortType</td><td id="infoPortType">-</td></tr>
+                        <tr><td class="text-muted">Port</td><td id="infoPort">-</td></tr>
+                        <tr><td class="text-muted">AMR Slot</td><td id="infoAmrSlot">-</td></tr>
                         <tr><td class="text-muted">시작 시각</td><td id="infoStartedAt">-</td></tr>
                         <tr><td class="text-muted">Step 시작</td><td id="infoStepStartedAt">-</td></tr>
                     </table>
@@ -276,8 +319,10 @@
         // 현재 상태 정보
         $('#infoCmdId').text(state.cmdId);
         $('#infoNodeId').text(state.nodeId);
-        $('#infoPort').text(state.port);
         $('#infoJobType').text(state.jobType);
+        $('#infoPortType').text(state.portType);
+        $('#infoPort').text(state.port);
+        $('#infoAmrSlot').text(state.amrSlot);
         $('#infoStartedAt').text(state.startedAt || '-');
         $('#infoStepStartedAt').text(state.stepStartedAt || '-');
 
@@ -289,10 +334,30 @@
             $('#errorAlert').addClass('d-none');
         }
 
+        // 데모 상태 표시
+        var demoBadge = $('#demoStatus');
+        if (state.isDemoRunning) {
+            demoBadge.removeClass('bg-secondary').addClass('bg-success');
+            var stepLabels = ['N001 LOAD', 'N001 UNLOAD', 'N006 LOAD', 'N006 UNLOAD'];
+            var label = stepLabels[state.demoStepIndex] || '';
+            demoBadge.text('Running');
+            $('#demoInfo').removeClass('d-none');
+            $('#demoCycleInfo').text('Cycle #' + state.demoCycle + ' — ' + (state.demoStepIndex + 1) + '/4 ' + label);
+        } else {
+            demoBadge.removeClass('bg-success').addClass('bg-secondary');
+            demoBadge.text('Stopped');
+            $('#demoInfo').addClass('d-none');
+        }
+
+        // 데모/시퀀스 버튼 상태
+        var busy = state.isRunning || state.isDemoRunning;
+        $('#btnStartDemo').prop('disabled', busy);
+        $('#btnStopDemo').prop('disabled', !state.isDemoRunning);
+
         // 버튼 상태
-        $('#btnStart').prop('disabled', state.isRunning);
+        $('#btnStart').prop('disabled', busy);
         $('#btnAbort').prop('disabled', !state.isRunning);
-        $('.manual-step-btn').prop('disabled', state.isRunning);
+        $('.manual-step-btn').prop('disabled', busy);
 
         // Step 진행 표시기 업데이트
         var currentStepNum = state.currentStep;
@@ -352,7 +417,9 @@
         var data = {
             nodeId: $('#nodeId').val(),
             port: $('#port').val(),
-            jobType: $('#jobType').val()
+            jobType: $('#jobType').val(),
+            portType: $('#portType').val(),
+            amrSlot: parseInt($('#amrSlot').val()) || 1
         };
 
         $.ajax({
@@ -376,7 +443,9 @@
             step: stepName,
             nodeId: $('#nodeId').val(),
             port: $('#port').val(),
-            jobType: $('#jobType').val()
+            jobType: $('#jobType').val(),
+            portType: $('#portType').val(),
+            amrSlot: parseInt($('#amrSlot').val()) || 1
         };
 
         $.ajax({
@@ -405,6 +474,40 @@
                 if (!res.success) {
                     alert('중단 실패: ' + res.error);
                 }
+            }
+        });
+    }
+
+    function startDemo() {
+        if (!confirm('데모 모드를 시작하시겠습니까?\nN001 ↔ N006 LOAD/UNLOAD 반복 실행')) return;
+
+        $.ajax({
+            url: '/Sequence?handler=StartDemo',
+            method: 'POST',
+            success: function (res) {
+                if (!res.success) {
+                    alert('데모 시작 실패: ' + res.error);
+                }
+            },
+            error: function () {
+                alert('데모 시작 요청 실패');
+            }
+        });
+    }
+
+    function stopDemo() {
+        if (!confirm('데모 모드를 정지하시겠습니까?\n현재 시퀀스 완료 후 중지됩니다.')) return;
+
+        $.ajax({
+            url: '/Sequence?handler=StopDemo',
+            method: 'POST',
+            success: function (res) {
+                if (!res.success) {
+                    alert('데모 정지 실패: ' + res.error);
+                }
+            },
+            error: function () {
+                alert('데모 정지 요청 실패');
             }
         });
     }

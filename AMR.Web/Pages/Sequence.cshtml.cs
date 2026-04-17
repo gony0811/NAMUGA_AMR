@@ -35,9 +35,14 @@ public class SequenceModel : PageModel
             nodeId = state.NodeId ?? "-",
             port = state.Port ?? "-",
             jobType = state.JobType ?? "-",
+            portType = state.PortType ?? "-",
+            amrSlot = state.AmrSlot,
             error = state.ErrorMessage,
             startedAt = state.StartedAt?.ToString("HH:mm:ss"),
-            stepStartedAt = state.StepStartedAt?.ToString("HH:mm:ss.fff")
+            stepStartedAt = state.StepStartedAt?.ToString("HH:mm:ss.fff"),
+            isDemoRunning = state.IsDemoRunning,
+            demoCycle = state.DemoCycle,
+            demoStepIndex = state.DemoStepIndex
         });
     }
 
@@ -69,7 +74,9 @@ public class SequenceModel : PageModel
                 Command = "moveCmd",
                 NodeId = request.NodeId,
                 Port = string.IsNullOrEmpty(request.Port) ? null : request.Port,
-                JobType = string.IsNullOrEmpty(request.JobType) ? null : request.JobType
+                JobType = string.IsNullOrEmpty(request.JobType) ? null : request.JobType,
+                PortType = string.IsNullOrEmpty(request.PortType) ? null : request.PortType,
+                AmrSlot = request.AmrSlot
             };
 
             _ = _runner.RunSequenceAsync(command, HttpContext.RequestAborted);
@@ -101,11 +108,44 @@ public class SequenceModel : PageModel
                     Command = "moveCmd",
                     NodeId = request.NodeId,
                     Port = string.IsNullOrEmpty(request.Port) ? null : request.Port,
-                    JobType = string.IsNullOrEmpty(request.JobType) ? null : request.JobType
+                    JobType = string.IsNullOrEmpty(request.JobType) ? null : request.JobType,
+                    PortType = string.IsNullOrEmpty(request.PortType) ? null : request.PortType,
+                    AmrSlot = request.AmrSlot
                 };
             }
 
             await _runner.ExecuteStepAsync(step, command, HttpContext.RequestAborted);
+            return new JsonResult(new { success = true });
+        }
+        catch (Exception ex)
+        {
+            return new JsonResult(new { success = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>데모 모드 시작 (AJAX)</summary>
+    public IActionResult OnPostStartDemo()
+    {
+        try
+        {
+            if (_runner.State.IsRunning || _runner.State.IsDemoRunning)
+                return new JsonResult(new { success = false, error = "시퀀스 또는 데모가 이미 실행 중입니다." });
+
+            _ = _runner.RunDemoAsync(HttpContext.RequestAborted);
+            return new JsonResult(new { success = true });
+        }
+        catch (Exception ex)
+        {
+            return new JsonResult(new { success = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>데모 모드 정지 (AJAX)</summary>
+    public IActionResult OnPostStopDemo()
+    {
+        try
+        {
+            _runner.StopDemo();
             return new JsonResult(new { success = true });
         }
         catch (Exception ex)
@@ -134,6 +174,8 @@ public class StartSequenceRequest
     public string NodeId { get; set; } = "N0001";
     public string? Port { get; set; }
     public string? JobType { get; set; }
+    public string? PortType { get; set; }
+    public int AmrSlot { get; set; } = 1;
 }
 
 public class ExecuteStepRequest
@@ -142,4 +184,6 @@ public class ExecuteStepRequest
     public string? NodeId { get; set; }
     public string? Port { get; set; }
     public string? JobType { get; set; }
+    public string? PortType { get; set; }
+    public int AmrSlot { get; set; } = 1;
 }

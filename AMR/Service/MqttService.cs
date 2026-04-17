@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using AMR.Communication;
 using AMR.Models;
 using Microsoft.Extensions.Hosting;
@@ -12,6 +13,7 @@ public class MqttService : BackgroundService
 {
     private readonly AmrMqttClient _mqttClient;
     private readonly ILogger<MqttService> _logger;
+    private readonly ConcurrentQueue<AmrCommand> _actionCmdQueue = new();
 
     /// <summary>명령 수신 이벤트 (ACS → AMR)</summary>
     public event Action<AmrCommand>? OnCommandReceived;
@@ -24,9 +26,20 @@ public class MqttService : BackgroundService
         _mqttClient.OnCommandReceived += command =>
         {
             _logger.LogInformation("MQTT 명령 수신: {Command} (cmdId: {CmdId})", command.Command, command.CmdId);
+
+            if (command.Command == "actionCmd")
+            {
+                _actionCmdQueue.Enqueue(command);
+                _logger.LogInformation("ActionCmd 큐에 추가: CmdId={CmdId}", command.CmdId);
+            }
+
             OnCommandReceived?.Invoke(command);
         };
     }
+
+    /// <summary>ActionCmd 큐에서 명령을 꺼낸다.</summary>
+    public bool TryDequeueActionCmd(out AmrCommand command)
+        => _actionCmdQueue.TryDequeue(out command!);
 
     /// <summary>MQTT 브로커 연결 상태</summary>
     public bool IsConnected => _mqttClient.IsConnected;

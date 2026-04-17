@@ -18,7 +18,10 @@
       "Bash(brew list *)",
       "Bash(sips *)",
       "Bash(grep -r \"btn-info\\\\|btn-warning\\\\|btn-success\\\\|btn-danger\" /Users/sean/Documents/GitHub/NAMUGA_AMR/AMR.Web/Pages/*.cshtml)",
-      "Bash(grep \"\\\\.cs$\")"
+      "Bash(grep \"\\\\.cs$\")",
+      "Bash(tasklist)",
+      "Bash(netstat -ano)",
+      "Bash(grep -E \"\\\\.cs$\")"
     ]
   }
 }
