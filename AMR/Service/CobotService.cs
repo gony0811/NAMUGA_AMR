@@ -35,6 +35,7 @@ public class CobotService : BackgroundService
                     _logger.LogWarning("Cobot Modbus TCP 연결 시도");
                     await _modbusClient.ConnectAsync(stoppingToken);
                     _logger.LogInformation("Cobot Modbus TCP 연결 완료");
+                    await InitializeCobotModeAsync(stoppingToken);
                 }
             }
             catch (OperationCanceledException)
@@ -56,6 +57,31 @@ public class CobotService : BackgroundService
         _logger.LogInformation("CobotService 종료");
         await base.StopAsync(cancellationToken);
     }
+
+    #region 초기화
+
+    /// <summary>연결 직후 Auto 모드 전환 + Main Program 실행</summary>
+    private async Task InitializeCobotModeAsync(CancellationToken ct)
+    {
+        var status = await ReadStatusAsync(ct);
+
+        // Manual → Auto 전환
+        if (status.RobotMode != 0)
+        {
+            _logger.LogInformation("Cobot Manual 모드 → Auto 모드 전환");
+            await ManualAutoSwitchAsync(ct);
+            await Task.Delay(500, ct);
+        }
+
+        // Main Program 실행
+        if (status.OperationStatus != 2)
+        {
+            _logger.LogInformation("Cobot Main Program 시작");
+            await StartMainProgramAsync(ct);
+        }
+    }
+
+    #endregion
 
     #region 상태 읽기
 
