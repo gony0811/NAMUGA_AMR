@@ -35,7 +35,7 @@ public class CobotService : BackgroundService
                     _logger.LogWarning("Cobot Modbus TCP 연결 시도");
                     await _modbusClient.ConnectAsync(stoppingToken);
                     _logger.LogInformation("Cobot Modbus TCP 연결 완료");
-                    await InitializeCobotModeAsync(stoppingToken);
+                    await EnsureAutoAndRunningAsync(stoppingToken);
                 }
             }
             catch (OperationCanceledException)
@@ -60,24 +60,38 @@ public class CobotService : BackgroundService
 
     #region 초기화
 
-    /// <summary>연결 직후 Auto 모드 전환 + Main Program 실행</summary>
-    private async Task InitializeCobotModeAsync(CancellationToken ct)
+    /// <summary>
+    /// 코봇이 Auto 모드 + Main Program 실행 중인 상태가 되도록 보장한다.
+    /// 이미 그 상태면 아무것도 하지 않으므로 연결 직후/리셋 시퀀스 양쪽에서 안전하게 호출 가능.
+    /// </summary>
+    public async Task EnsureAutoAndRunningAsync(CancellationToken ct = default)
     {
         var status = await ReadStatusAsync(ct);
 
-        // Manual → Auto 전환
+        // Manual → Auto 전환 (RobotMode 0 = Auto)
         if (status.RobotMode != 0)
         {
             _logger.LogInformation("Cobot Manual 모드 → Auto 모드 전환");
             await ManualAutoSwitchAsync(ct);
             await Task.Delay(500, ct);
         }
+        else
+        {
+            _logger.LogDebug("Cobot 이미 Auto 모드 — 토글 스킵");
+        }
 
-        // Main Program 실행
+        // Main Program 실행 (OperationStatus 2 = Running)
+        // 모드 전환 직후에는 OperationStatus가 갱신되지 않을 수 있으므로 다시 읽음
+        status = await ReadStatusAsync(ct);
         if (status.OperationStatus != 2)
         {
             _logger.LogInformation("Cobot Main Program 시작");
             await StartMainProgramAsync(ct);
+            await Task.Delay(500, ct);
+        }
+        else
+        {
+            _logger.LogDebug("Cobot Main Program 이미 실행 중 — 시작 스킵");
         }
     }
 

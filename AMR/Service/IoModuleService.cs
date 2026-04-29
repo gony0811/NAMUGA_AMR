@@ -211,45 +211,59 @@ public class IoModuleService : BackgroundService
         }
     }
 
-    /// <summary>리셋 스위치 OFF→ON 전환 시 코봇 복구 시퀀스 실행</summary>
+    /// <summary>
+    /// 리셋 스위치 짧게 누름 시 실행되는 코봇 복구 시퀀스.
+    /// 각 단계는 best-effort — 개별 실패가 후속 단계를 막지 않는다.
+    /// 4·5 단계는 EnsureAutoAndRunningAsync 한 번으로 묶어서 토글 오작동을 방지.
+    /// </summary>
     private async Task HandleResetSwitchAsync(CancellationToken ct)
     {
+        // 1. 부저 OFF — 알람음 해제
+        await TryStepAsync("부저 OFF", () => SetTowerLampBuzzerAsync(false, ct), ct);
+
+        // 2. 코봇 복구
+        await TryStepAsync("코봇 복구(Recovery)", () => _cobotService.RecoveryAsync(ct), ct);
+
+        // 3. 전체 오류 해제 (시간이 걸릴 수 있어 1초 대기)
+        await TryStepAsync("전체 오류 해제(ClearAllFaults)", async () =>
+        {
+            await _cobotService.ClearAllFaultsAsync(ct);
+            await Task.Delay(1000, ct);
+        }, ct);
+
+        // 4·5. Auto 모드 + Main Program 보장 (현재 상태 확인 후 필요할 때만 토글/시작)
+        await TryStepAsync("Auto 모드 + Main Program 보장", () => _cobotService.EnsureAutoAndRunningAsync(ct), ct);
+
+        // 6. 코봇 홈 위치 이동 (DI25 핸드셰이크) — 앞 단계가 모두 성공해야 의미 있음
         try
         {
-            // 1. 부저 OFF — 알람음 해제
-            _logger.LogInformation("[리셋] 부저 OFF");
-            await SetTowerLampBuzzerAsync(false, ct);
-            await Task.Delay(500, ct);
-
-            // 2. 코봇 복구
-            _logger.LogInformation("[리셋] 코봇 복구(Recovery) 실행");
-            await _cobotService.RecoveryAsync(ct);
-            await Task.Delay(500, ct);
-
-            // 3. 전체 오류 해제
-            _logger.LogInformation("[리셋] 전체 오류 해제(ClearAllFaults) 실행");
-            await _cobotService.ClearAllFaultsAsync(ct);
-            await Task.Delay(500, ct);
-
-            // 4. 자동 전환
-            _logger.LogInformation("[리셋] 자동 모드 전환(ManualAutoSwitch) 실행");
-            await _cobotService.ManualAutoSwitchAsync(ct);
-            await Task.Delay(500, ct);
-
-            // 5. 메인 프로그램 시작
-            _logger.LogInformation("[리셋] 메인 프로그램 시작(StartMainProgram) 실행");
-            await _cobotService.StartMainProgramAsync(ct);
-            await Task.Delay(500, ct);
-
-            // 6. 코봇 홈 위치 이동 (DI25 핸드셰이크)
             _logger.LogInformation("[리셋] 코봇 홈 위치 이동(DI25) 실행");
             await SendCobotCommandAndWaitAsync(25, "Home 위치 이동", ct);
-
             _logger.LogInformation("[리셋] 코봇 복구 시퀀스 완료");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[리셋] 코봇 복구 시퀀스 실패");
+            _logger.LogError(ex, "[리셋] 코봇 홈 위치 이동 실패");
+        }
+    }
+
+    /// <summary>리셋 시퀀스의 한 단계를 실행하고 실패해도 다음 단계로 진행</summary>
+    private async Task TryStepAsync(string stepName, Func<Task> action, CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested) return;
+        _logger.LogInformation("[리셋] {Step} 실행", stepName);
+        try
+        {
+            await action();
+            await Task.Delay(500, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[리셋] {Step} 실패 — 다음 단계 계속 진행", stepName);
         }
     }
 
