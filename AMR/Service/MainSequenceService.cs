@@ -123,12 +123,12 @@ public class MainSequenceService : BackgroundService
 
         // 3. 현재 작업 상태 확인 (Idle 상태에서만 이동 명령 수행)
         var status = await _amrService.ReadStatusAsync(ct);
-        if (status.WorkStatus != WorkStatus.Idle)
+        if (status.RobotState != RobotState.Stopped)
         {
-            _logger.LogWarning("AMR이 작업 중(WorkStatus={WorkStatus})에 moveCmd 수신: NodeId={NodeId}",
-                status.WorkStatus, command.NodeId);
+            _logger.LogWarning("AMR이 작업 중(RobotState={RobotState})에 moveCmd 수신: NodeId={NodeId}",
+                status.RobotState, command.NodeId);
             await ReplyAsync(command.CmdId, "REJECTED", 11,
-                $"AMR이 현재 작업 중입니다. (상태: {status.WorkStatus})", ct);
+                $"AMR이 현재 이동 중입니다. (상태: {status.RobotState})", ct);
             return;
         }
 
