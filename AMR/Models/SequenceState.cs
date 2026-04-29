@@ -19,6 +19,9 @@ public class SequenceState
     /// <summary>목적지 노드 ID</summary>
     public string? NodeId { get; set; }
 
+    /// <summary>마지막으로 도착 확인된 노드 ID — 동일 위치 명령 시 이동 스킵 판단용</summary>
+    public string? CurrentNodeId { get; set; }
+
     /// <summary>포트 (LEFT/RIGHT)</summary>
     public string? Port { get; set; }
 

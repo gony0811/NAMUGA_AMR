@@ -80,11 +80,26 @@ public class MoveSequenceRunner
             // Step 2: MoveCmdReply
             await ExecuteStepInternalAsync(SequenceStep.MoveCmdReply, command, token);
 
-            // Step 3: SendMoveCommand
-            await ExecuteStepInternalAsync(SequenceStep.SendMoveCommand, command, token);
+            // 현재 위치가 목적지와 동일하면 Step 3·4 (이동) 스킵
+            var alreadyAtDestination = !string.IsNullOrEmpty(State.CurrentNodeId)
+                && string.Equals(State.CurrentNodeId, command.NodeId, StringComparison.OrdinalIgnoreCase);
 
-            // Step 4: WaitArrival
-            await ExecuteStepInternalAsync(SequenceStep.WaitArrival, command, token);
+            if (alreadyAtDestination)
+            {
+                AddLog(SequenceStep.SendMoveCommand,
+                    $"이동 스킵 — AMR이 이미 목적지({command.NodeId})에 위치함");
+            }
+            else
+            {
+                // 이동 시작 — 도착 전까지 현재 위치 정보 무효화
+                State.CurrentNodeId = null;
+
+                // Step 3: SendMoveCommand
+                await ExecuteStepInternalAsync(SequenceStep.SendMoveCommand, command, token);
+
+                // Step 4: WaitArrival
+                await ExecuteStepInternalAsync(SequenceStep.WaitArrival, command, token);
+            }
 
             // Step 5: WaitActionCmd
             await ExecuteStepInternalAsync(SequenceStep.WaitActionCmd, command, token);
@@ -290,7 +305,7 @@ public class MoveSequenceRunner
                 await Step_SendMoveCommand(command, ct);
                 break;
             case SequenceStep.WaitArrival:
-                await Step_WaitArrival(ct);
+                await Step_WaitArrival(command, ct);
                 break;
             case SequenceStep.WaitActionCmd:
                 await Step_WaitActionCmd(command, ct);
@@ -366,7 +381,7 @@ public class MoveSequenceRunner
     }
 
     /// <summary>Step 4: AMR 도착 대기 — RobotState가 Started→Stopped 전이를 확인하여 도착 판단</summary>
-    private async Task Step_WaitArrival(CancellationToken ct)
+    private async Task Step_WaitArrival(AmrCommand command, CancellationToken ct)
     {
         AddLog(SequenceStep.WaitArrival, "AMR 도착 대기 시작");
 
@@ -401,7 +416,8 @@ public class MoveSequenceRunner
 
             if (status.RobotState == RobotState.Stopped)
             {
-                AddLog(SequenceStep.WaitArrival, "AMR 도착 완료 (RobotState=Stopped)");
+                State.CurrentNodeId = command.NodeId;
+                AddLog(SequenceStep.WaitArrival, $"AMR 도착 완료 (RobotState=Stopped, NodeId={command.NodeId})");
                 return;
             }
 
