@@ -1,3 +1,4 @@
+using System.Text;
 using AMR.Enums;
 using AMR.Models;
 using AMR.Service;
@@ -58,6 +59,37 @@ public class SequenceModel : PageModel
             message = l.Message,
             isError = l.IsError
         }));
+    }
+
+    /// <summary>로그 CSV 다운로드</summary>
+    public IActionResult OnGetExportCsv(int count = 200)
+    {
+        var logs = _runner.GetRecentLogs(count);
+
+        var sb = new StringBuilder();
+        sb.Append('\uFEFF'); // UTF-8 BOM (Excel에서 한글 깨짐 방지)
+        sb.AppendLine("Timestamp,StepNumber,Step,IsError,Message");
+
+        foreach (var l in logs)
+        {
+            sb.Append(l.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff")).Append(',');
+            sb.Append((int)l.Step).Append(',');
+            sb.Append(l.Step).Append(',');
+            sb.Append(l.IsError ? "1" : "0").Append(',');
+            sb.AppendLine(CsvEscape(l.Message));
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(sb.ToString());
+        var fileName = $"sequence_log_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+        return File(bytes, "text/csv", fileName);
+    }
+
+    private static string CsvEscape(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return string.Empty;
+        var needsQuote = value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r');
+        var escaped = value.Replace("\"", "\"\"");
+        return needsQuote ? $"\"{escaped}\"" : escaped;
     }
 
     /// <summary>전체 시퀀스 시작 (AJAX)</summary>

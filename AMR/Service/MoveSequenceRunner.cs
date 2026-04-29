@@ -481,6 +481,9 @@ public class MoveSequenceRunner
 
         var qrResult = _cameraService.GetQrDetectionResult();
 
+        AddLog(SequenceStep.CameraQrRead,
+            $"Camera 원시값: Detected={qrResult.Detected}, RealDeltaX={qrResult.RealDeltaXMm:F2}mm, RealDeltaY={qrResult.RealDeltaYMm:F2}mm, Rotation={qrResult.RotationAngle:F2}°");
+
         if (!qrResult.Detected)
         {
             AddLog(SequenceStep.CameraQrRead, "QR 미감지 — offset (0, 0, 0) 전달", true);
@@ -491,12 +494,17 @@ public class MoveSequenceRunner
         var dy = (short)Math.Clamp((int)qrResult.RealDeltaYMm, short.MinValue, short.MaxValue);
         var dTheta = (short)Math.Clamp((int)(qrResult.RotationAngle * 100), short.MinValue, short.MaxValue);
 
+        AddLog(SequenceStep.CameraQrRead, $"Cobot AI0(dx)={dx}mm 쓰기");
         await _cobotService.WriteAnalogInputAsync(0, unchecked((ushort)dx), ct);  // AI0: dx
+
+        AddLog(SequenceStep.CameraQrRead, $"Cobot AI1(dy)={dy}mm 쓰기");
         await _cobotService.WriteAnalogInputAsync(1, unchecked((ushort)dy), ct);  // AI1: dy
+
+        AddLog(SequenceStep.CameraQrRead, $"Cobot AI2(dTheta)={dTheta} (0.01° 단위) 쓰기");
         await _cobotService.WriteAnalogInputAsync(2, unchecked((ushort)dTheta), ct); // AI2: dTheta
 
         AddLog(SequenceStep.CameraQrRead,
-            $"QR offset 전달: dx={dx}mm, dy={dy}mm, dTheta={dTheta} (Detected={qrResult.Detected})");
+            $"QR offset 전달 완료: dx={dx}mm, dy={dy}mm, dTheta={dTheta} (Detected={qrResult.Detected})");
     }
 
     /// <summary>Step 8: PICK 수행 — JobType/PortType/Port/AmrSlot에 따라 DI 결정</summary>
