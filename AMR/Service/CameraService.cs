@@ -493,19 +493,9 @@ public class CameraService : BackgroundService
 
     private byte[] EncodeToJpeg(Mat frame)
     {
-        // BGR -> BGRA 변환 후 SkiaSharp로 JPEG 인코딩
-        using var bgraFrame = new Mat();
-        Cv2.CvtColor(frame, bgraFrame, ColorConversionCodes.BGR2BGRA);
-
-        var info = new SKImageInfo(bgraFrame.Width, bgraFrame.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
-        var rowBytes = bgraFrame.Width * 4;
-
-        using var bitmap = new SKBitmap();
-        bitmap.InstallPixels(info, bgraFrame.Data, rowBytes);
-
-        using var image = SKImage.FromBitmap(bitmap);
-        using var data = image.Encode(SKEncodedImageFormat.Jpeg, _settings.JpegQuality);
-        return data.ToArray();
+        var prms = new[] { new ImageEncodingParam(ImwriteFlags.JpegQuality, _settings.JpegQuality) };
+        Cv2.ImEncode(".jpg", frame, out var buf, prms);
+        return buf;
     }
 
     private void ReleaseCapture()
