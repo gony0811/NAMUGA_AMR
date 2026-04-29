@@ -17,6 +17,9 @@ public class CommandReply
     /// <summary>상세 메시지</summary>
     public string Message { get; set; } = string.Empty;
 
+    /// <summary>작업 유형 (LOAD, UNLOAD, EXCHANGE)</summary>
+    public string? JobType { get; set; }
+
     /// <summary>타임스탬프 (ISO 8601)</summary>
     public string Timestamp { get; set; } = string.Empty;
 }

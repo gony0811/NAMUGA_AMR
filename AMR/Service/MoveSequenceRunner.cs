@@ -585,6 +585,7 @@ public class MoveSequenceRunner
         var reply = new CommandReply
         {
             CmdId = command.CmdId,
+            JobType = command.JobType,
             Status = "COMPLETED",
             ResultCode = 0,
             Message = $"시퀀스 완료: {command.NodeId}",
