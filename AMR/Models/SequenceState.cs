@@ -22,6 +22,12 @@ public class SequenceState
     /// <summary>마지막으로 도착 확인된 노드 ID — 동일 위치 명령 시 이동 스킵 판단용</summary>
     public string? CurrentNodeId { get; set; }
 
+    /// <summary>
+    /// 마지막 도착 시점의 AMR 실제 pose (스킵 결정 직전에 현재 pose와 비교하여
+    /// 사람이 AMR을 옮겼는지 감지하는 데 사용)
+    /// </summary>
+    public RobotPose? LastArrivedPose { get; set; }
+
     /// <summary>포트 (LEFT/RIGHT)</summary>
     public string? Port { get; set; }
 

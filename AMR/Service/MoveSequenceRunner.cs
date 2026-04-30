@@ -31,6 +31,9 @@ public class MoveSequenceRunner
     private const int CobotTimeoutSeconds = 60;
     private const int PollIntervalMs = 500;
 
+    /// <summary>도착 후 캐시된 pose 와 현재 pose 의 허용 편차(mm). 초과 시 사람이 AMR을 옮긴 것으로 판단</summary>
+    private const double PoseDriftToleranceMm = 20.0;
+
     public MoveSequenceRunner(
         AmrService amrService,
         CobotService cobotService,
@@ -84,6 +87,40 @@ public class MoveSequenceRunner
             var alreadyAtDestination = !string.IsNullOrEmpty(State.CurrentNodeId)
                 && string.Equals(State.CurrentNodeId, command.NodeId, StringComparison.OrdinalIgnoreCase);
 
+            // Pose 비교로 사람이 AMR을 옮겼는지 검증 — 캐시된 도착 pose와 현재 pose의 거리 비교
+            if (alreadyAtDestination && State.LastArrivedPose is { } lastPose)
+            {
+                try
+                {
+                    var currentPose = await _amrService.ReadPoseAsync(token);
+                    var dx = currentPose.X - lastPose.X;
+                    var dy = currentPose.Y - lastPose.Y;
+                    var distMm = Math.Sqrt(dx * dx + dy * dy);
+
+                    if (distMm > PoseDriftToleranceMm)
+                    {
+                        AddLog(SequenceStep.SendMoveCommand,
+                            $"AMR 위치 이탈 감지 ({distMm:F1}mm > {PoseDriftToleranceMm:F0}mm) — 캐시 무효화, 이동 강제 실행", true);
+                        alreadyAtDestination = false;
+                        State.CurrentNodeId = null;
+                        State.LastArrivedPose = null;
+                    }
+                    else
+                    {
+                        AddLog(SequenceStep.SendMoveCommand,
+                            $"Pose 검증 통과 ({distMm:F1}mm ≤ {PoseDriftToleranceMm:F0}mm) — 이동 스킵 진행");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "도착 위치 검증용 Pose 읽기 실패 — 안전을 위해 이동 강제 실행");
+                    AddLog(SequenceStep.SendMoveCommand, "Pose 읽기 실패 — 캐시 무효화, 이동 강제 실행", true);
+                    alreadyAtDestination = false;
+                    State.CurrentNodeId = null;
+                    State.LastArrivedPose = null;
+                }
+            }
+
             if (alreadyAtDestination)
             {
                 AddLog(SequenceStep.SendMoveCommand,
@@ -93,6 +130,7 @@ public class MoveSequenceRunner
             {
                 // 이동 시작 — 도착 전까지 현재 위치 정보 무효화
                 State.CurrentNodeId = null;
+                State.LastArrivedPose = null;
 
                 // Step 3: SendMoveCommand
                 await ExecuteStepInternalAsync(SequenceStep.SendMoveCommand, command, token);
@@ -417,7 +455,21 @@ public class MoveSequenceRunner
             if (status.RobotState == RobotState.Stopped)
             {
                 State.CurrentNodeId = command.NodeId;
-                AddLog(SequenceStep.WaitArrival, $"AMR 도착 완료 (RobotState=Stopped, NodeId={command.NodeId})");
+
+                // 도착 시점 pose 기록 — 다음 명령에서 사람 개입 감지에 사용
+                try
+                {
+                    State.LastArrivedPose = await _amrService.ReadPoseAsync(ct);
+                    AddLog(SequenceStep.WaitArrival,
+                        $"AMR 도착 완료 (NodeId={command.NodeId}, Pose=({State.LastArrivedPose.X:F1}, {State.LastArrivedPose.Y:F1}))");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "도착 pose 읽기 실패");
+                    State.LastArrivedPose = null;
+                    AddLog(SequenceStep.WaitArrival,
+                        $"AMR 도착 완료 (NodeId={command.NodeId}, Pose 읽기 실패)");
+                }
                 return;
             }
 
