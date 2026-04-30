@@ -239,15 +239,32 @@ public class IoModuleService : BackgroundService
         await TryStepAsync("Auto 모드 + Main Program 보장", () => _cobotService.EnsureAutoAndRunningAsync(ct), ct);
 
         // 7. 코봇 홈(Phome) 위치 이동 (DI25 핸드셰이크) — 앞 단계가 모두 성공해야 의미 있음
+        var phomeOk = false;
         try
         {
             _logger.LogInformation("[리셋] 코봇 Phome 위치 이동(DI25) 실행");
             await SendCobotCommandAndWaitAsync(25, "Phome 위치 이동", ct);
-            _logger.LogInformation("[리셋] 코봇 복구 시퀀스 완료");
+            phomeOk = true;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "[리셋] 코봇 홈 위치 이동 실패");
+        }
+
+        // 8. 경광등 정상(Green) 복귀 — Phome 까지 성공했을 때만
+        if (phomeOk)
+        {
+            await TryStepAsync("경광등 정상(Green) 복귀", async () =>
+            {
+                await AllTowerLampsOffAsync(ct);
+                await SetTowerLampGreenAsync(true, ct);
+            }, ct);
+
+            _logger.LogInformation("[리셋] 코봇 복구 시퀀스 완료");
+        }
+        else
+        {
+            _logger.LogWarning("[리셋] Phome 이동 실패 — 경광등은 알람 색 유지");
         }
     }
 
