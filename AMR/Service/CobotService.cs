@@ -83,16 +83,30 @@ public class CobotService : BackgroundService
         // Main Program 실행 (OperationStatus 2 = Running)
         // 모드 전환 직후에는 OperationStatus가 갱신되지 않을 수 있으므로 다시 읽음
         status = await ReadStatusAsync(ct);
-        if (status.OperationStatus != 2)
-        {
-            _logger.LogInformation("Cobot Main Program 시작");
-            await StartMainProgramAsync(ct);
-            await Task.Delay(500, ct);
-        }
-        else
+        if (status.OperationStatus == 2)
         {
             _logger.LogDebug("Cobot Main Program 이미 실행 중 — 시작 스킵");
+            return;
         }
+
+        _logger.LogInformation("Cobot Main Program 시작");
+        await StartMainProgramAsync(ct);
+
+        // Running 상태가 될 때까지 폴링 (최대 10초) — 그래야 DI 핸드셰이크가 응답을 받음
+        var deadline = DateTime.Now.AddSeconds(10);
+        while (DateTime.Now < deadline)
+        {
+            await Task.Delay(300, ct);
+            status = await ReadStatusAsync(ct);
+            if (status.OperationStatus == 2)
+            {
+                _logger.LogInformation("Cobot Main Program 실행 확인");
+                return;
+            }
+        }
+
+        _logger.LogWarning("Cobot Main Program 시작 후 10초 내 Running 상태 확인 실패 (OperationStatus={Status})",
+            status.OperationStatus);
     }
 
     #endregion
