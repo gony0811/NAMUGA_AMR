@@ -214,7 +214,8 @@ public class IoModuleService : BackgroundService
     /// <summary>
     /// 리셋 스위치 짧게 누름 시 실행되는 코봇 복구 시퀀스.
     /// 각 단계는 best-effort — 개별 실패가 후속 단계를 막지 않는다.
-    /// 4·5 단계는 EnsureAutoAndRunningAsync 한 번으로 묶어서 토글 오작동을 방지.
+    /// 5·6 단계는 EnsureAutoAndRunningAsync 한 번으로 묶어서 토글 오작동을 방지.
+    /// 순서: 부저OFF → Recovery → ClearAllFaults → Servo ON → Auto+Main → Phome(DI25)
     /// </summary>
     private async Task HandleResetSwitchAsync(CancellationToken ct)
     {
@@ -231,14 +232,17 @@ public class IoModuleService : BackgroundService
             await Task.Delay(1000, ct);
         }, ct);
 
-        // 4·5. Auto 모드 + Main Program 보장 (현재 상태 확인 후 필요할 때만 토글/시작)
+        // 4. 코봇 활성화 (Servo ON) — 모터 전원 인가
+        await TryStepAsync("코봇 활성화(Servo ON)", () => SetCobotServoAsync(true, ct), ct);
+
+        // 5·6. Auto 모드 + Main Program 보장 (현재 상태 확인 후 필요할 때만 토글/시작)
         await TryStepAsync("Auto 모드 + Main Program 보장", () => _cobotService.EnsureAutoAndRunningAsync(ct), ct);
 
-        // 6. 코봇 홈 위치 이동 (DI25 핸드셰이크) — 앞 단계가 모두 성공해야 의미 있음
+        // 7. 코봇 홈(Phome) 위치 이동 (DI25 핸드셰이크) — 앞 단계가 모두 성공해야 의미 있음
         try
         {
-            _logger.LogInformation("[리셋] 코봇 홈 위치 이동(DI25) 실행");
-            await SendCobotCommandAndWaitAsync(25, "Home 위치 이동", ct);
+            _logger.LogInformation("[리셋] 코봇 Phome 위치 이동(DI25) 실행");
+            await SendCobotCommandAndWaitAsync(25, "Phome 위치 이동", ct);
             _logger.LogInformation("[리셋] 코봇 복구 시퀀스 완료");
         }
         catch (Exception ex)
