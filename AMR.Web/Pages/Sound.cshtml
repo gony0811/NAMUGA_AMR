@@ -1,0 +1,108 @@
+@page
+@model AMR.Web.Pages.SoundModel
+@{
+    ViewData["Title"] = "Movement Sound";
+}
+
+<div class="container mt-3" style="max-width: 600px;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>이동 사운드</h2>
+        <span id="playingBadge" class="badge bg-secondary">대기</span>
+    </div>
+    <hr />
+
+    <div class="card mb-3">
+        <div class="card-header">
+            <h5 class="card-title mb-0">설정</h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                AMR이 이동 중(<code>RobotState=Started</code>)일 때 서버 시스템 스피커로
+                도-미-솔 멜로디를 1초 간격으로 반복 재생합니다.
+                서버 사이드 동작이라 이 페이지를 닫아도 계속 동작합니다.
+            </p>
+
+            <div class="d-flex gap-2 mb-3">
+                <button id="btnOn" class="btn btn-success flex-fill" onclick="setSound(true)">
+                    <i class="bi bi-volume-up"></i> ON
+                </button>
+                <button id="btnOff" class="btn btn-secondary flex-fill" onclick="setSound(false)">
+                    <i class="bi bi-volume-mute"></i> OFF
+                </button>
+            </div>
+
+            <table class="table table-sm">
+                <tbody>
+                    <tr>
+                        <th style="width:40%">활성화 상태</th>
+                        <td><span id="enabledLabel" class="badge bg-secondary">-</span></td>
+                    </tr>
+                    <tr>
+                        <th>현재 RobotState</th>
+                        <td><span id="robotStateLabel">-</span></td>
+                    </tr>
+                    <tr>
+                        <th>재생 중</th>
+                        <td><span id="isPlayingLabel">-</span></td>
+                    </tr>
+                    <tr>
+                        <th>음 (Hz)</th>
+                        <td id="frequenciesLabel">-</td>
+                    </tr>
+                    <tr>
+                        <th>음 길이 / 주기</th>
+                        <td id="timingLabel">-</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    let pollTimer = null;
+
+    function pollState() {
+        $.getJSON('/Sound?handler=State', function (s) {
+            const enabledBadge = s.enabled
+                ? '<span class="badge bg-success">ON</span>'
+                : '<span class="badge bg-secondary">OFF</span>';
+            $('#enabledLabel').html(enabledBadge);
+            $('#robotStateLabel').text(s.robotState);
+            $('#isPlayingLabel').html(s.isPlaying
+                ? '<span class="badge bg-warning text-dark">재생 중</span>'
+                : '<span class="text-muted">정지</span>');
+            $('#frequenciesLabel').text((s.frequencies || []).join(' → ') + ' Hz');
+            $('#timingLabel').text(s.noteDurationMs + ' ms / ' + s.intervalMs + ' ms');
+
+            $('#playingBadge')
+                .removeClass('bg-secondary bg-warning bg-success')
+                .addClass(s.isPlaying ? 'bg-warning text-dark' : (s.enabled ? 'bg-success' : 'bg-secondary'))
+                .text(s.isPlaying ? '재생 중' : (s.enabled ? '대기 (ON)' : 'OFF'));
+
+            $('#btnOn').toggleClass('btn-success', !s.enabled).toggleClass('btn-outline-success', s.enabled);
+            $('#btnOff').toggleClass('btn-secondary', s.enabled).toggleClass('btn-outline-secondary', !s.enabled);
+        });
+    }
+
+    function setSound(enabled) {
+        $.ajax({
+            url: '/Sound?handler=Set',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ enabled: enabled }),
+            success: function () { pollState(); }
+        });
+    }
+
+    $(function () {
+        pollState();
+        pollTimer = setInterval(pollState, 1000);
+    });
+
+    $(window).on('beforeunload', function () {
+        if (pollTimer) clearInterval(pollTimer);
+    });
+</script>
+}

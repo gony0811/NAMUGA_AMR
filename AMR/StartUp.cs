@@ -59,6 +59,10 @@ public class AmrModule : Module
             .AsSelf()
             .SingleInstance();
 
+        builder.RegisterType<MovementSoundService>()
+            .AsSelf()
+            .SingleInstance();
+
         // Camera - 플랫폼별 프로바이더 등록
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
