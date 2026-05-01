@@ -447,9 +447,6 @@ public class MoveSequenceRunner
         // Phase 2: RobotState가 Stopped가 될 때까지 대기 (이동 완료 확인)
         while (!ct.IsCancellationRequested)
         {
-            if (DateTime.Now > deadline)
-                throw new TimeoutException($"AMR 도착 대기 타임아웃 ({ArrivalTimeoutSeconds}초)");
-
             var status = await _amrService.ReadStatusAsync(ct);
 
             if (status.RobotState == RobotState.Stopped)
