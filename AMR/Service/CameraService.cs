@@ -467,10 +467,7 @@ public class CameraService : BackgroundService
             {
                 lock (_qrLock)
                 {
-                    if (_lastQrResult.Detected)
-                    {
-                        _lastQrResult = new QrDetectionResult();
-                    }
+                    _lastQrResult.Detected = false;
                 }
             }
         }

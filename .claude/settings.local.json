@@ -21,7 +21,8 @@
       "Bash(grep \"\\\\.cs$\")",
       "Bash(tasklist)",
       "Bash(netstat -ano)",
-      "Bash(grep -E \"\\\\.cs$\")"
+      "Bash(grep -E \"\\\\.cs$\")",
+      "Bash(ls -la /c/Users/eggplant/Documents/GitHub/NAMUGA_AMR/AMR/Models/*.cs)"
     ]
   }
 }

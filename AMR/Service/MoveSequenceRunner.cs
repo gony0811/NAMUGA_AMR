@@ -476,9 +476,21 @@ public class MoveSequenceRunner
         ct.ThrowIfCancellationRequested();
     }
 
-    /// <summary>Step 5: ActionCmd 대기 — 설비포트면 대기, 자재포트면 스킵</summary>
+    /// <summary>Step 5: ARRIVED 전송 → ActionCmd 대기 (설비포트만 대기, 자재포트는 스킵)</summary>
     private async Task Step_WaitActionCmd(AmrCommand command, CancellationToken ct)
     {
+        // 포트 타입에 관계없이 ARRIVED reply 전송
+        var arrivedReply = new CommandReply
+        {
+            CmdId = command.CmdId,
+            Status = "ARRIVED",
+            ResultCode = 0,
+            Message = $"AMR 도착: {command.NodeId}",
+            Timestamp = DateTime.UtcNow.ToString("o")
+        };
+        await _mqttService.PublishReplyAsync(arrivedReply, ct);
+        AddLog(SequenceStep.WaitActionCmd, $"ARRIVED 전송 완료 (CmdId={command.CmdId})");
+
         var isFacility = string.Equals(command.PortType, "FACILITY", StringComparison.OrdinalIgnoreCase);
 
         if (!isFacility)
@@ -535,7 +547,9 @@ public class MoveSequenceRunner
 
         if (!qrResult.Detected)
         {
-            AddLog(SequenceStep.CameraQrRead, "QR 미감지 — offset (0, 0, 0) 전달", true);
+            AddLog(SequenceStep.CameraQrRead,
+                $"QR 미감지 — 마지막 정상값 사용: dx={qrResult.RealDeltaXMm:F2}mm, dy={qrResult.RealDeltaYMm:F2}mm, angle={qrResult.RotationAngle:F2}°",
+                true);
         }
 
         // offset 값을 Cobot AI 레지스터에 전달 (mm 단위, short → ushort 비트 변환)
