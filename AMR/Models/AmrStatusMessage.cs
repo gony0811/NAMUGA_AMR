@@ -25,7 +25,7 @@ public record AmrStatusMessage
     public AbnormalInfo? Abnormal { get; init; }
 
     /// <summary>RobotStatus에서 MQTT 전송용 DTO로 변환</summary>
-    public static AmrStatusMessage FromRobotStatus(RobotStatus status) => new()
+    public static AmrStatusMessage FromRobotStatus(RobotStatus status, Alarm? alarm = null) => new()
     {
         State = new AmrStateInfo
         {
@@ -38,7 +38,9 @@ public record AmrStatusMessage
         Error = new ErrorInfo
         {
             Code = status.ErrorCode,
-            Message = string.Empty
+            Message = string.Empty,
+            AlarmCode = alarm?.Code ?? string.Empty,
+            AlarmName = alarm?.Name ?? string.Empty
         },
         Battery = status.Battery,
         Abnormal = null

@@ -55,6 +55,10 @@ public class AmrModule : Module
             .AsSelf()
             .SingleInstance();
 
+        builder.RegisterType<AlarmService>()
+            .AsSelf()
+            .SingleInstance();
+
         builder.RegisterType<SignalTowerService>()
             .AsSelf()
             .SingleInstance();

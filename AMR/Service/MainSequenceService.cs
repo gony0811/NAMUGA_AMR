@@ -15,6 +15,7 @@ public class MainSequenceService : BackgroundService
     private readonly AmrService _amrService;
     private readonly MqttService _mqttService;
     private readonly MoveSequenceRunner _sequenceRunner;
+    private readonly AlarmService _alarmService;
     private readonly IDbContextFactory<AmrDbContext> _dbFactory;
     private readonly ILogger<MainSequenceService> _logger;
 
@@ -22,12 +23,14 @@ public class MainSequenceService : BackgroundService
         AmrService amrService,
         MqttService mqttService,
         MoveSequenceRunner sequenceRunner,
+        AlarmService alarmService,
         IDbContextFactory<AmrDbContext> dbFactory,
         ILogger<MainSequenceService> logger)
     {
         _amrService = amrService;
         _mqttService = mqttService;
         _sequenceRunner = sequenceRunner;
+        _alarmService = alarmService;
         _dbFactory = dbFactory;
         _logger = logger;
     }
@@ -50,7 +53,8 @@ public class MainSequenceService : BackgroundService
                 if (_amrService.IsConnected && _mqttService.IsConnected)
                 {
                     var robotStatus = await _amrService.ReadStatusAsync(stoppingToken);
-                    var statusMessage = AmrStatusMessage.FromRobotStatus(robotStatus);
+                    var alarm = await _alarmService.EvaluateAsync(stoppingToken);
+                    var statusMessage = AmrStatusMessage.FromRobotStatus(robotStatus, alarm);
 
                     if (!statusMessage.Equals(previousStatus))
                     {
