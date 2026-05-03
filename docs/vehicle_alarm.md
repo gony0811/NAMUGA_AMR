@@ -2,6 +2,7 @@
 # AMR Alarm List
 ```
 ## Template
+### Alarm Id
 ### Alarm Code
 ### Alarm Name
 ### Condition
@@ -11,7 +12,9 @@
 - Description of the alarm
 ```
 ------------------------------------------------------------------------
+
 ## ERR-100
+### ACS Alarm Code: 100
 ### Cobot Not Ready
 ### Condition
 1. Modbus Disconnect
@@ -24,6 +27,7 @@
 
 
 ## AMR-ERR-101
+### ACS Alarm Code: 101
 ### AMR Not Ready
 ### Condition
 1. Modbus Disconnect
@@ -32,6 +36,7 @@
 
 
 ## AMR-ERR-102
+### ACS Alarm Code: 102
 ### Camera does not ready
 ### Condition
 1. Camera Disconnect
@@ -39,6 +44,7 @@
 - Camera does not ready to perform a transport task
 
 ## AMR-ERR-103
+### ACS Alarm Code: 103
 ### QR Code reading failure
 ### Condition
 1. QR Code reading failure
