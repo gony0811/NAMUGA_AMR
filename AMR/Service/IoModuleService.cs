@@ -228,7 +228,14 @@ public class IoModuleService : BackgroundService
                     _isHandlingToggle = true;
                     _ = Task.Run(async () =>
                     {
-                        try { await HandleManualAutoToggleAsync(stoppingToken); }
+                        try
+                        {
+                            await HandleManualAutoToggleAsync(stoppingToken);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "[토글] fire-and-forget Task 예외");
+                        }
                         finally { _isHandlingToggle = false; }
                     }, stoppingToken);
                 }
@@ -263,7 +270,14 @@ public class IoModuleService : BackgroundService
                     _isHandlingReset = true;
                     _ = Task.Run(async () =>
                     {
-                        try { await HandleResetSwitchAsync(stoppingToken); }
+                        try
+                        {
+                            await HandleResetSwitchAsync(stoppingToken);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "[리셋] fire-and-forget Task 예외 — 시퀀스가 도중에 종료됨");
+                        }
                         finally { _isHandlingReset = false; }
                     }, stoppingToken);
                 }
@@ -304,8 +318,17 @@ public class IoModuleService : BackgroundService
     /// </summary>
     private async Task HandleResetSwitchAsync(CancellationToken ct)
     {
+        _logger.LogInformation("[리셋] 코봇 복구 시퀀스 시작");
+
         // 0. Faulted 상태 해제 — 경광등이 NORMAL 상태로 복귀하도록
-        _sequenceRunner.ClearFault();
+        try
+        {
+            _sequenceRunner.ClearFault();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[리셋] ClearFault 실패 — 다음 단계 계속 진행");
+        }
 
         // 1. 부저 OFF — 알람음 해제
         await TryStepAsync("부저 OFF", () => SetTowerLampBuzzerAsync(false, ct), ct);
