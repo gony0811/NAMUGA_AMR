@@ -1,4 +1,5 @@
 using AMR.Communication;
+using AMR.Enums;
 using AMR.Models;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -21,11 +22,16 @@ public class IoModuleService : BackgroundService
 {
     private readonly IoModuleModbusTcpClient _modbusClient;
     private readonly CobotService _cobotService;
+    private readonly MoveSequenceRunner _sequenceRunner;
     private readonly ILogger<IoModuleService> _logger;
 
     private IoModuleInputStatus? _currentInputs;
     private bool _lastEmoState;
     private bool _lastResetState;
+
+    // MzDetect 센서 이전 상태 (Magazine 제거 감지용)
+    private bool _lastMzDetect1, _lastMzDetect2, _lastMzDetect3, _lastMzDetect4;
+    private bool _mzInitialized;
 
     // 리셋 스위치 짧게/길게 누름 구분 상태
     private DateTime? _resetPressedAt;
@@ -38,10 +44,11 @@ public class IoModuleService : BackgroundService
     private const int InputPollIntervalMs = 200;       // 메인 입력 폴링 주기 (짧은 펄스 캐치)
     private const int LongPressDurationMs = 5000;       // 5초 이상 누르면 Manual↔Auto 토글
 
-    public IoModuleService(IoModuleModbusTcpClient modbusClient, CobotService cobotService, ILogger<IoModuleService> logger)
+    public IoModuleService(IoModuleModbusTcpClient modbusClient, CobotService cobotService, MoveSequenceRunner sequenceRunner, ILogger<IoModuleService> logger)
     {
         _modbusClient = modbusClient;
         _cobotService = cobotService;
+        _sequenceRunner = sequenceRunner;
         _logger = logger;
     }
 
@@ -50,6 +57,9 @@ public class IoModuleService : BackgroundService
 
     /// <summary>가장 최근에 폴링한 입력 상태 (연결 전/폴링 전에는 null)</summary>
     public IoModuleInputStatus? CurrentInputs => _currentInputs;
+
+    /// <summary>현재 활성화된 비정상 상황 (없으면 null)</summary>
+    public AbnormalInfo? CurrentAbnormal { get; private set; }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -77,6 +87,9 @@ public class IoModuleService : BackgroundService
 
                     _lastEmoState = inputs.Emo;
 
+                    // Magazine 제거 감지 (MzDetect ON→OFF)
+                    EvaluateMzDetect(inputs);
+
                     // 리셋 스위치 처리 (짧게=복구 시퀀스, 5초 이상=Manual↔Auto 토글)
                     HandleResetSwitchInputs(inputs.Reset, stoppingToken);
                     _lastResetState = inputs.Reset;
@@ -103,6 +116,78 @@ public class IoModuleService : BackgroundService
         _logger.LogInformation("IoModuleService 종료");
         await base.StopAsync(cancellationToken);
     }
+
+    #region Magazine 제거 감지
+
+    /// <summary>
+    /// MzDetect 센서 ON→OFF 전환 감지 — Cobot이 Magazine을 핸들링하는
+    /// 단계(CobotPickup/CobotPlace)가 아닌 상황에서 감지되면 CARRIER_REMOVED abnormal 보고.
+    /// 해당 포트 센서가 다시 ON이 되면 abnormal 자동 해제.
+    /// </summary>
+    private void EvaluateMzDetect(IoModuleInputStatus inputs)
+    {
+        if (!_mzInitialized)
+        {
+            _lastMzDetect1 = inputs.MzDetect1;
+            _lastMzDetect2 = inputs.MzDetect2;
+            _lastMzDetect3 = inputs.MzDetect3;
+            _lastMzDetect4 = inputs.MzDetect4;
+            _mzInitialized = true;
+            return;
+        }
+
+        var step = _sequenceRunner.State.CurrentStep;
+        bool cobotHandling = step is SequenceStep.CobotPickup or SequenceStep.CobotPlace;
+
+        if (!cobotHandling)
+        {
+            CheckPortRemoval(1, _lastMzDetect1, inputs.MzDetect1);
+            CheckPortRemoval(2, _lastMzDetect2, inputs.MzDetect2);
+            CheckPortRemoval(3, _lastMzDetect3, inputs.MzDetect3);
+            CheckPortRemoval(4, _lastMzDetect4, inputs.MzDetect4);
+        }
+
+        // 제거된 포트의 센서가 다시 ON이면 abnormal 해제
+        if (CurrentAbnormal is { } abnormal)
+        {
+            bool restored = abnormal.Node switch
+            {
+                "PORT1" => inputs.MzDetect1,
+                "PORT2" => inputs.MzDetect2,
+                "PORT3" => inputs.MzDetect3,
+                "PORT4" => inputs.MzDetect4,
+                _ => false
+            };
+
+            if (restored)
+            {
+                _logger.LogInformation("Magazine 복귀 감지 — {Port} (MzDetect OFF→ON) — abnormal 해제", abnormal.Node);
+                CurrentAbnormal = null;
+            }
+        }
+
+        _lastMzDetect1 = inputs.MzDetect1;
+        _lastMzDetect2 = inputs.MzDetect2;
+        _lastMzDetect3 = inputs.MzDetect3;
+        _lastMzDetect4 = inputs.MzDetect4;
+    }
+
+    private void CheckPortRemoval(int port, bool prev, bool current)
+    {
+        // ON→OFF 전환 = Magazine 제거
+        if (prev && !current)
+        {
+            CurrentAbnormal = new AbnormalInfo
+            {
+                Type = "CARRIER_REMOVED",
+                Node = $"PORT{port}",
+                Timestamp = DateTime.UtcNow.ToString("o")
+            };
+            _logger.LogWarning("Magazine 제거 감지 — PORT{Port} (MzDetect ON→OFF)", port);
+        }
+    }
+
+    #endregion
 
     #region 리셋 스위치 처리
 
@@ -219,6 +304,9 @@ public class IoModuleService : BackgroundService
     /// </summary>
     private async Task HandleResetSwitchAsync(CancellationToken ct)
     {
+        // 0. Faulted 상태 해제 — 경광등이 NORMAL 상태로 복귀하도록
+        _sequenceRunner.ClearFault();
+
         // 1. 부저 OFF — 알람음 해제
         await TryStepAsync("부저 OFF", () => SetTowerLampBuzzerAsync(false, ct), ct);
 

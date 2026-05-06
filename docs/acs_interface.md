@@ -26,4 +26,11 @@ AMR과 ACS 간 MQTT 통신 인터페이스 정의서
 "temperatureCelsius" : 0,
 "chargingState" : "Discharging"
 }
+
+"abnormal": {
+"code": "M100"
+"type": "CARRIER_REMOVED",
+"node": "N001",
+"timestamp": "2026-03-25T16:05:05Z"
+}
 }

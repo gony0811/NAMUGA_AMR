@@ -25,6 +25,7 @@ public class MoveSequenceRunner
     private readonly ConcurrentQueue<SequenceLogEntry> _logs = new();
     private CancellationTokenSource? _sequenceCts;
     private CancellationTokenSource? _demoCts;
+    private Alarm? _abortAlarm;
 
     private const int MaxLogEntries = 200;
     private const int ArrivalTimeoutSeconds = 120;
@@ -159,9 +160,19 @@ public class MoveSequenceRunner
         }
         catch (OperationCanceledException)
         {
-            AddLog(State.CurrentStep, "시퀀스 취소됨", true);
-            State.CurrentStep = SequenceStep.Idle;
-            _logger.LogWarning("시퀀스 취소됨");
+            if (_abortAlarm is { } alarm)
+            {
+                State.CurrentStep = SequenceStep.Faulted;
+                State.ErrorMessage = $"[{alarm.Id}] {alarm.Name}";
+                AddLog(SequenceStep.Faulted, $"알람으로 시퀀스 중단: [{alarm.Id}] {alarm.Name}", true);
+                _logger.LogWarning("알람으로 시퀀스 중단: {AlarmId} {AlarmName}", alarm.Id, alarm.Name);
+            }
+            else
+            {
+                AddLog(State.CurrentStep, "시퀀스 취소됨", true);
+                State.CurrentStep = SequenceStep.Idle;
+                _logger.LogWarning("시퀀스 취소됨");
+            }
         }
         catch (Exception ex)
         {
@@ -173,6 +184,7 @@ public class MoveSequenceRunner
         finally
         {
             State.IsRunning = false;
+            _abortAlarm = null;
             _sequenceCts?.Dispose();
             _sequenceCts = null;
             _runLock.Release();
@@ -226,6 +238,25 @@ public class MoveSequenceRunner
             AddLog(State.CurrentStep, "시퀀스 중단 요청", true);
             _logger.LogWarning("시퀀스 중단 요청");
         }
+    }
+
+    /// <summary>Faulted 상태 해제 — 리셋 스위치 등 외부 복구 시 호출</summary>
+    public void ClearFault()
+    {
+        if (State.CurrentStep == SequenceStep.Faulted)
+        {
+            AddLog(SequenceStep.Faulted, "Fault 상태 해제 → Idle 복귀", false);
+            State.CurrentStep = SequenceStep.Idle;
+            State.ErrorMessage = null;
+            _logger.LogInformation("Fault 상태 해제 — Idle 복귀");
+        }
+    }
+
+    /// <summary>알람 발생으로 인한 시퀀스 즉시 중단 — Faulted 상태로 전환</summary>
+    public void AbortWithAlarm(Alarm alarm)
+    {
+        _abortAlarm = alarm;
+        AbortSequence();
     }
 
     /// <summary>데모 모드 실행 — N001/N006에서 LOAD↔UNLOAD 반복</summary>

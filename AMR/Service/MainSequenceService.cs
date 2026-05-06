@@ -16,6 +16,7 @@ public class MainSequenceService : BackgroundService
     private readonly MqttService _mqttService;
     private readonly MoveSequenceRunner _sequenceRunner;
     private readonly AlarmService _alarmService;
+    private readonly IoModuleService _ioModuleService;
     private readonly IDbContextFactory<AmrDbContext> _dbFactory;
     private readonly ILogger<MainSequenceService> _logger;
 
@@ -24,6 +25,7 @@ public class MainSequenceService : BackgroundService
         MqttService mqttService,
         MoveSequenceRunner sequenceRunner,
         AlarmService alarmService,
+        IoModuleService ioModuleService,
         IDbContextFactory<AmrDbContext> dbFactory,
         ILogger<MainSequenceService> logger)
     {
@@ -31,6 +33,7 @@ public class MainSequenceService : BackgroundService
         _mqttService = mqttService;
         _sequenceRunner = sequenceRunner;
         _alarmService = alarmService;
+        _ioModuleService = ioModuleService;
         _dbFactory = dbFactory;
         _logger = logger;
     }
@@ -54,7 +57,15 @@ public class MainSequenceService : BackgroundService
                 {
                     var robotStatus = await _amrService.ReadStatusAsync(stoppingToken);
                     var alarm = await _alarmService.EvaluateAsync(stoppingToken);
-                    var statusMessage = AmrStatusMessage.FromRobotStatus(robotStatus, alarm);
+
+                    if (alarm != null && _sequenceRunner.State.IsRunning)
+                    {
+                        _logger.LogWarning("알람 감지 — 시퀀스 즉시 중단: {AlarmId} {AlarmName}", alarm.Id, alarm.Name);
+                        _sequenceRunner.AbortWithAlarm(alarm);
+                    }
+
+                    var abnormal = _ioModuleService.CurrentAbnormal;
+                    var statusMessage = AmrStatusMessage.FromRobotStatus(robotStatus, alarm, abnormal);
 
                     if (!statusMessage.Equals(previousStatus))
                     {
