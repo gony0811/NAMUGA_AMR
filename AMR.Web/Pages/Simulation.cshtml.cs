@@ -40,7 +40,7 @@ public class SimulationModel : PageModel
                 Error = new ErrorInfo
                 {
                     Code = request.ErrorCode,
-                    Message = request.ErrorMessage
+                    Name = request.ErrorMessage
                 },
                 Battery = new BatteryStatus
                 {

@@ -10,21 +10,35 @@ namespace AMR.Service;
 public class AlarmService
 {
     private readonly CobotService _cobotService;
+    private readonly AmrService _amrService;
     private readonly ILogger<AlarmService> _logger;
 
-    public AlarmService(CobotService cobotService, ILogger<AlarmService> logger)
+    public AlarmService(CobotService cobotService, AmrService amrService, ILogger<AlarmService> logger)
     {
         _cobotService = cobotService;
+        _amrService = amrService;
         _logger = logger;
     }
 
     /// <summary>현재 활성화된 알람을 평가. 없으면 null.</summary>
     public async Task<Alarm?> EvaluateAsync(CancellationToken ct = default)
     {
+        if (IsAmrNotReady())
+            return Alarm.AmrNotReady;
+
         if (await IsCobotNotReadyAsync(ct))
             return Alarm.CobotNotReady;
 
         return null;
+    }
+
+    /// <summary>
+    /// ERR-101 AMR Not Ready 조건 평가.
+    /// 1) Modbus Disconnect
+    /// </summary>
+    private bool IsAmrNotReady()
+    {
+        return !_amrService.IsConnected;
     }
 
     /// <summary>

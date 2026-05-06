@@ -37,10 +37,8 @@ public record AmrStatusMessage
         Pose = status.Pose,
         Error = new ErrorInfo
         {
-            Code = status.ErrorCode,
-            Message = string.Empty,
-            AlarmCode = alarm?.Code ?? string.Empty,
-            AlarmName = alarm?.Name ?? string.Empty
+            Code = alarm?.Code ?? 0,
+            Name = alarm?.Name ?? string.Empty
         },
         Battery = status.Battery,
         Abnormal = null
