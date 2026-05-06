@@ -28,6 +28,7 @@ public class IoModuleService : BackgroundService
     private IoModuleInputStatus? _currentInputs;
     private bool _lastEmoState;
     private bool _lastResetState;
+    private bool _inputsBaselineEstablished;   // 첫 폴링은 baseline 으로만 사용 (콜드 부팅 시 ON 상태를 엣지로 오인식 방지)
 
     // MzDetect 센서 이전 상태 (Magazine 제거 감지용)
     private bool _lastMzDetect1, _lastMzDetect2, _lastMzDetect3, _lastMzDetect4;
@@ -80,19 +81,36 @@ public class IoModuleService : BackgroundService
                     var inputs = await _modbusClient.ReadInputsAsync(stoppingToken);
                     _currentInputs = inputs;
 
-                    if (inputs.Emo && !_lastEmoState)
-                        _logger.LogWarning("EMO(비상정지) 활성 감지 — X000 ON");
-                    else if (!inputs.Emo && _lastEmoState)
-                        _logger.LogInformation("EMO(비상정지) 해제 — X000 OFF");
+                    // 첫 폴링은 baseline 으로만 사용 — 콜드 부팅 시 EMO/Reset이 ON 상태라도
+                    // OFF→ON 엣지로 오인식해서 리셋 시퀀스나 EMO 알람을 트리거하지 않도록.
+                    if (!_inputsBaselineEstablished)
+                    {
+                        _lastEmoState = inputs.Emo;
+                        _lastResetState = inputs.Reset;
+                        _inputsBaselineEstablished = true;
+                        _logger.LogInformation(
+                            "I/O Module 입력 baseline 초기화 (EMO={Emo}, Reset={Reset})",
+                            inputs.Emo, inputs.Reset);
 
-                    _lastEmoState = inputs.Emo;
+                        // MzDetect 도 첫 호출에서 자체적으로 baseline 처리
+                        EvaluateMzDetect(inputs);
+                    }
+                    else
+                    {
+                        if (inputs.Emo && !_lastEmoState)
+                            _logger.LogWarning("EMO(비상정지) 활성 감지 — X000 ON");
+                        else if (!inputs.Emo && _lastEmoState)
+                            _logger.LogInformation("EMO(비상정지) 해제 — X000 OFF");
 
-                    // Magazine 제거 감지 (MzDetect ON→OFF)
-                    EvaluateMzDetect(inputs);
+                        _lastEmoState = inputs.Emo;
 
-                    // 리셋 스위치 처리 (짧게=복구 시퀀스, 5초 이상=Manual↔Auto 토글)
-                    HandleResetSwitchInputs(inputs.Reset, stoppingToken);
-                    _lastResetState = inputs.Reset;
+                        // Magazine 제거 감지 (MzDetect ON→OFF)
+                        EvaluateMzDetect(inputs);
+
+                        // 리셋 스위치 처리 (짧게=복구 시퀀스, 5초 이상=Manual↔Auto 토글)
+                        HandleResetSwitchInputs(inputs.Reset, stoppingToken);
+                        _lastResetState = inputs.Reset;
+                    }
                 }
             }
             catch (OperationCanceledException)
