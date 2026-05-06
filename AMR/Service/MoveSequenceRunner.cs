@@ -32,9 +32,6 @@ public class MoveSequenceRunner
     private const int CobotTimeoutSeconds = 60;
     private const int PollIntervalMs = 500;
 
-    /// <summary>이동 명령 후 Started 가 이 시간 내에 안 오고 Stopped 가 유지되면 "이미 목적지" 로 간주</summary>
-    private const int AlreadyAtDestinationWindowSeconds = 5;
-
     /// <summary>도착 후 캐시된 pose 와 현재 pose 의 허용 편차(mm). 초과 시 사람이 AMR을 옮긴 것으로 판단</summary>
     private const double PoseDriftToleranceMm = 20.0;
 
@@ -493,11 +490,8 @@ public class MoveSequenceRunner
         AddLog(SequenceStep.WaitArrival, "AMR 도착 대기 시작");
 
         var deadline = DateTime.Now.AddSeconds(ArrivalTimeoutSeconds);
-        var startedWindowDeadline = DateTime.Now.AddSeconds(AlreadyAtDestinationWindowSeconds);
 
-        // Phase 1: RobotState가 Started 가 될 때까지 대기 (이동 시작 확인).
-        // 단, 짧은 윈도(AlreadyAtDestinationWindowSeconds) 동안 Started 가 안 오고 계속 Stopped 면
-        // "AMR 이 이미 목적지에 있어 안 움직임" 으로 간주하여 즉시 도착 처리.
+        // Phase 1: RobotState 가 Started 가 될 때까지 대기 (이동 시작 확인)
         while (!ct.IsCancellationRequested)
         {
             if (DateTime.Now > deadline)
@@ -509,15 +503,6 @@ public class MoveSequenceRunner
             {
                 AddLog(SequenceStep.WaitArrival, "AMR 이동 시작 확인 (RobotState=Started)");
                 break;
-            }
-
-            // 윈도 경과 + 여전히 Stopped → 이미 목적지로 판단
-            if (DateTime.Now > startedWindowDeadline && status.RobotState == RobotState.Stopped)
-            {
-                AddLog(SequenceStep.WaitArrival,
-                    $"이동 시작 안 됨 ({AlreadyAtDestinationWindowSeconds}초 경과, RobotState=Stopped) — AMR 이 이미 목적지에 위치한 것으로 간주");
-                await RecordArrivalAsync(command, ct);
-                return;
             }
 
             await Task.Delay(PollIntervalMs, ct);
