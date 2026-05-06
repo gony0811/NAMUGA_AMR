@@ -35,6 +35,9 @@ public class MoveSequenceRunner
     /// <summary>도착 후 캐시된 pose 와 현재 pose 의 허용 편차(mm). 초과 시 사람이 AMR을 옮긴 것으로 판단</summary>
     private const double PoseDriftToleranceMm = 20.0;
 
+    /// <summary>도착 후 캐시된 pose 와 현재 pose 의 허용 각도 편차(도). 초과 시 회전된 것으로 판단</summary>
+    private const double PoseAngleToleranceDeg = 5.0;
+
     public MoveSequenceRunner(
         AmrService amrService,
         CobotService cobotService,
@@ -88,28 +91,60 @@ public class MoveSequenceRunner
             var alreadyAtDestination = !string.IsNullOrEmpty(State.CurrentNodeId)
                 && string.Equals(State.CurrentNodeId, command.NodeId, StringComparison.OrdinalIgnoreCase);
 
-            // Pose 비교로 사람이 AMR을 옮겼는지 검증 — 캐시된 도착 pose와 현재 pose의 거리 비교
+            // Pose 비교로 사람이 AMR을 옮겼는지 / 회전됐는지 검증 — X/Y 거리 + Angle 차이 모두 검사
             if (alreadyAtDestination && State.LastArrivedPose is { } lastPose)
             {
                 try
                 {
                     var currentPose = await _amrService.ReadPoseAsync(token);
-                    var dx = currentPose.X - lastPose.X;
-                    var dy = currentPose.Y - lastPose.Y;
-                    var distMm = Math.Sqrt(dx * dx + dy * dy);
 
-                    if (distMm > PoseDriftToleranceMm)
+                    // 의심 데이터 방어 — pose 가 정확히 (0,0) 이면 통신 stale 가능성
+                    if (currentPose.X == 0 && currentPose.Y == 0)
                     {
                         AddLog(SequenceStep.SendMoveCommand,
-                            $"AMR 위치 이탈 감지 ({distMm:F1}mm > {PoseDriftToleranceMm:F0}mm) — 캐시 무효화, 이동 강제 실행", true);
+                            "현재 Pose=(0,0) — stale 데이터 의심, 캐시 무효화, 이동 강제 실행", true);
                         alreadyAtDestination = false;
                         State.CurrentNodeId = null;
                         State.LastArrivedPose = null;
                     }
                     else
                     {
-                        AddLog(SequenceStep.SendMoveCommand,
-                            $"Pose 검증 통과 ({distMm:F1}mm ≤ {PoseDriftToleranceMm:F0}mm) — 이동 스킵 진행");
+                        var dx = currentPose.X - lastPose.X;
+                        var dy = currentPose.Y - lastPose.Y;
+                        var distMm = Math.Sqrt(dx * dx + dy * dy);
+
+                        // 각도 차이 (-180 ~ 180 정규화)
+                        var dAngle = currentPose.Angle - lastPose.Angle;
+                        while (dAngle > 180) dAngle -= 360;
+                        while (dAngle < -180) dAngle += 360;
+                        var dAngleAbs = Math.Abs(dAngle);
+
+                        var poseInfo =
+                            $"last=({lastPose.X:F1},{lastPose.Y:F1},{lastPose.Angle:F1}°) " +
+                            $"now=({currentPose.X:F1},{currentPose.Y:F1},{currentPose.Angle:F1}°) " +
+                            $"Δ=({dx:F1},{dy:F1}) dist={distMm:F1}mm dAngle={dAngleAbs:F1}°";
+
+                        if (distMm > PoseDriftToleranceMm)
+                        {
+                            AddLog(SequenceStep.SendMoveCommand,
+                                $"AMR 위치 이탈 감지 ({distMm:F1}mm > {PoseDriftToleranceMm:F0}mm) — 캐시 무효화, 이동 강제 실행 [{poseInfo}]", true);
+                            alreadyAtDestination = false;
+                            State.CurrentNodeId = null;
+                            State.LastArrivedPose = null;
+                        }
+                        else if (dAngleAbs > PoseAngleToleranceDeg)
+                        {
+                            AddLog(SequenceStep.SendMoveCommand,
+                                $"AMR 각도 이탈 감지 ({dAngleAbs:F1}° > {PoseAngleToleranceDeg:F0}°) — 캐시 무효화, 이동 강제 실행 [{poseInfo}]", true);
+                            alreadyAtDestination = false;
+                            State.CurrentNodeId = null;
+                            State.LastArrivedPose = null;
+                        }
+                        else
+                        {
+                            AddLog(SequenceStep.SendMoveCommand,
+                                $"Pose 검증 통과 ({distMm:F1}mm ≤ {PoseDriftToleranceMm:F0}mm, {dAngleAbs:F1}° ≤ {PoseAngleToleranceDeg:F0}°) — 이동 스킵 진행 [{poseInfo}]");
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -484,12 +519,24 @@ public class MoveSequenceRunner
             {
                 State.CurrentNodeId = command.NodeId;
 
-                // 도착 시점 pose 기록 — 다음 명령에서 사람 개입 감지에 사용
+                // 도착 시점 pose 기록 — 다음 명령에서 위치/각도 이탈 감지에 사용
                 try
                 {
-                    State.LastArrivedPose = await _amrService.ReadPoseAsync(ct);
-                    AddLog(SequenceStep.WaitArrival,
-                        $"AMR 도착 완료 (NodeId={command.NodeId}, Pose=({State.LastArrivedPose.X:F1}, {State.LastArrivedPose.Y:F1}))");
+                    var arrivedPose = await _amrService.ReadPoseAsync(ct);
+
+                    // 의심 데이터 방어 — pose 가 정확히 (0,0) 이면 캐시 안 함 (다음 명령 무조건 이동)
+                    if (arrivedPose.X == 0 && arrivedPose.Y == 0)
+                    {
+                        State.LastArrivedPose = null;
+                        AddLog(SequenceStep.WaitArrival,
+                            $"AMR 도착 완료 (NodeId={command.NodeId}, Pose=(0,0) stale 의심 — 캐시 안 함)", true);
+                    }
+                    else
+                    {
+                        State.LastArrivedPose = arrivedPose;
+                        AddLog(SequenceStep.WaitArrival,
+                            $"AMR 도착 완료 (NodeId={command.NodeId}, Pose=({arrivedPose.X:F1}, {arrivedPose.Y:F1}, {arrivedPose.Angle:F1}°))");
+                    }
                 }
                 catch (Exception ex)
                 {
