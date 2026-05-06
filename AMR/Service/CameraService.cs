@@ -326,14 +326,8 @@ public class CameraService : BackgroundService
     {
         try
         {
-            // BGR → BGRA 변환 후 SKBitmap 생성
-            using var bgraFrame = new Mat();
-            Cv2.CvtColor(rgbFrame, bgraFrame, ColorConversionCodes.BGR2BGRA);
-            var info = new SKImageInfo(bgraFrame.Width, bgraFrame.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
-            using var bitmap = new SKBitmap();
-            bitmap.InstallPixels(info, bgraFrame.Data, bgraFrame.Width * 4);
-
-            var result = _qrReader.Decode(bitmap);
+            // 다단계 전처리로 각인 QR/저대비 QR 도 인식 시도 (첫 성공 시 즉시 리턴)
+            var (result, methodUsed) = TryDecodeWithPreprocessing(rgbFrame);
 
             if (result?.Text is { Length: > 0 } decodedText && result.ResultPoints.Length >= 3)
             {
@@ -445,7 +439,9 @@ public class CameraService : BackgroundService
                 Cv2.Line(rgbFrame, frameCenter, center, new Scalar(0, 255, 255), 1, LineTypes.Link4);
 
                 // 텍스트 오버레이
-                var label = $"QR: {decodedText}";
+                var label = methodUsed == "Original"
+                    ? $"QR: {decodedText}"
+                    : $"QR: {decodedText} [{methodUsed}]";
                 var coordLabel = $"Center: ({centerX:F1}, {centerY:F1})  Angle: {angle:F1} deg";
                 var deltaLabel = $"Delta: ({deltaX:F1}, {deltaY:F1}) px";
                 var depthLabel = depthMm > 0
@@ -475,6 +471,74 @@ public class CameraService : BackgroundService
         {
             _logger.LogDebug(ex, "QR코드 감지 중 오류");
         }
+    }
+
+    /// <summary>
+    /// 다단계 전처리로 QR 디코딩 시도 — 각인 QR / 저대비 / 조명 불균일 대응.
+    /// 첫 성공 시 즉시 리턴. 어떤 전처리로 인식했는지 함께 반환.
+    /// </summary>
+    private (ZXing.Result? result, string methodUsed) TryDecodeWithPreprocessing(Mat rgbFrame)
+    {
+        // 1. 원본 BGR — 정상 흰배경/검정 QR
+        using (var bgra = new Mat())
+        {
+            Cv2.CvtColor(rgbFrame, bgra, ColorConversionCodes.BGR2BGRA);
+            var r = DecodeBgra(bgra);
+            if (r != null) return (r, "Original");
+        }
+
+        using var gray = new Mat();
+        Cv2.CvtColor(rgbFrame, gray, ColorConversionCodes.BGR2GRAY);
+
+        // 2. Otsu binary (반전) — 각인이 어둡게 보이는 경우 (이번 케이스)
+        if (TryDecodeFromGray(gray, ThresholdTypes.BinaryInv | ThresholdTypes.Otsu, out var rOtsuInv))
+            return (rOtsuInv, "Otsu-Inverted");
+
+        // 3. Otsu binary — 각인이 밝게 보이는 경우
+        if (TryDecodeFromGray(gray, ThresholdTypes.Binary | ThresholdTypes.Otsu, out var rOtsu))
+            return (rOtsu, "Otsu");
+
+        // 4. Adaptive threshold (Gaussian) — 조명 불균일
+        using (var adaptive = new Mat())
+        using (var bgra = new Mat())
+        {
+            Cv2.AdaptiveThreshold(gray, adaptive, 255, AdaptiveThresholdTypes.GaussianC,
+                                  ThresholdTypes.BinaryInv, 31, 5);
+            Cv2.CvtColor(adaptive, bgra, ColorConversionCodes.GRAY2BGRA);
+            var r = DecodeBgra(bgra);
+            if (r != null) return (r, "AdaptiveGaussian");
+        }
+
+        // 5. CLAHE 명암 향상 + Otsu 반전 — 저대비 영상 보정
+        using (var clahe = Cv2.CreateCLAHE(2.0, new Size(8, 8)))
+        using (var enhanced = new Mat())
+        {
+            clahe.Apply(gray, enhanced);
+            if (TryDecodeFromGray(enhanced, ThresholdTypes.BinaryInv | ThresholdTypes.Otsu, out var rClahe))
+                return (rClahe, "CLAHE+Otsu");
+        }
+
+        return (null, "");
+    }
+
+    /// <summary>그레이 Mat 에 임계값 적용 후 ZXing 디코드</summary>
+    private bool TryDecodeFromGray(Mat gray, ThresholdTypes thresh, out ZXing.Result? result)
+    {
+        using var bin = new Mat();
+        Cv2.Threshold(gray, bin, 0, 255, thresh);
+        using var bgra = new Mat();
+        Cv2.CvtColor(bin, bgra, ColorConversionCodes.GRAY2BGRA);
+        result = DecodeBgra(bgra);
+        return result != null;
+    }
+
+    /// <summary>BGRA Mat 을 SKBitmap 으로 감싸서 ZXing 에 입력</summary>
+    private ZXing.Result? DecodeBgra(Mat bgra)
+    {
+        var info = new SKImageInfo(bgra.Width, bgra.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
+        using var bitmap = new SKBitmap();
+        bitmap.InstallPixels(info, bgra.Data, bgra.Width * 4);
+        return _qrReader.Decode(bitmap);
     }
 
     private byte[] ColorizeAndEncodeDepth(Mat depthFrame, Mat normalized, Mat colorized)
