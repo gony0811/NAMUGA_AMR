@@ -32,6 +32,9 @@ public class MoveSequenceRunner
     private const int CobotTimeoutSeconds = 60;
     private const int PollIntervalMs = 500;
 
+    /// <summary>이동 명령 후 Started 가 이 시간 내에 안 오고 Stopped 가 유지되면 "이미 목적지" 로 간주</summary>
+    private const int AlreadyAtDestinationWindowSeconds = 5;
+
     /// <summary>도착 후 캐시된 pose 와 현재 pose 의 허용 편차(mm). 초과 시 사람이 AMR을 옮긴 것으로 판단</summary>
     private const double PoseDriftToleranceMm = 20.0;
 
@@ -490,8 +493,11 @@ public class MoveSequenceRunner
         AddLog(SequenceStep.WaitArrival, "AMR 도착 대기 시작");
 
         var deadline = DateTime.Now.AddSeconds(ArrivalTimeoutSeconds);
+        var startedWindowDeadline = DateTime.Now.AddSeconds(AlreadyAtDestinationWindowSeconds);
 
-        // Phase 1: RobotState가 Started가 될 때까지 대기 (이동 시작 확인)
+        // Phase 1: RobotState가 Started 가 될 때까지 대기 (이동 시작 확인).
+        // 단, 짧은 윈도(AlreadyAtDestinationWindowSeconds) 동안 Started 가 안 오고 계속 Stopped 면
+        // "AMR 이 이미 목적지에 있어 안 움직임" 으로 간주하여 즉시 도착 처리.
         while (!ct.IsCancellationRequested)
         {
             if (DateTime.Now > deadline)
@@ -505,46 +511,12 @@ public class MoveSequenceRunner
                 break;
             }
 
-            await Task.Delay(PollIntervalMs, ct);
-        }
-
-        ct.ThrowIfCancellationRequested();
-
-        // Phase 2: RobotState가 Stopped가 될 때까지 대기 (이동 완료 확인)
-        while (!ct.IsCancellationRequested)
-        {
-            var status = await _amrService.ReadStatusAsync(ct);
-
-            if (status.RobotState == RobotState.Stopped)
+            // 윈도 경과 + 여전히 Stopped → 이미 목적지로 판단
+            if (DateTime.Now > startedWindowDeadline && status.RobotState == RobotState.Stopped)
             {
-                State.CurrentNodeId = command.NodeId;
-
-                // 도착 시점 pose 기록 — 다음 명령에서 위치/각도 이탈 감지에 사용
-                try
-                {
-                    var arrivedPose = await _amrService.ReadPoseAsync(ct);
-
-                    // 의심 데이터 방어 — pose 가 정확히 (0,0) 이면 캐시 안 함 (다음 명령 무조건 이동)
-                    if (arrivedPose.X == 0 && arrivedPose.Y == 0)
-                    {
-                        State.LastArrivedPose = null;
-                        AddLog(SequenceStep.WaitArrival,
-                            $"AMR 도착 완료 (NodeId={command.NodeId}, Pose=(0,0) stale 의심 — 캐시 안 함)", true);
-                    }
-                    else
-                    {
-                        State.LastArrivedPose = arrivedPose;
-                        AddLog(SequenceStep.WaitArrival,
-                            $"AMR 도착 완료 (NodeId={command.NodeId}, Pose=({arrivedPose.X:F1}, {arrivedPose.Y:F1}, {arrivedPose.Angle:F1}°))");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "도착 pose 읽기 실패");
-                    State.LastArrivedPose = null;
-                    AddLog(SequenceStep.WaitArrival,
-                        $"AMR 도착 완료 (NodeId={command.NodeId}, Pose 읽기 실패)");
-                }
+                AddLog(SequenceStep.WaitArrival,
+                    $"이동 시작 안 됨 ({AlreadyAtDestinationWindowSeconds}초 경과, RobotState=Stopped) — AMR 이 이미 목적지에 위치한 것으로 간주");
+                await RecordArrivalAsync(command, ct);
                 return;
             }
 
@@ -552,6 +524,54 @@ public class MoveSequenceRunner
         }
 
         ct.ThrowIfCancellationRequested();
+
+        // Phase 2: RobotState 가 Stopped 가 될 때까지 대기 (이동 완료 확인)
+        while (!ct.IsCancellationRequested)
+        {
+            var status = await _amrService.ReadStatusAsync(ct);
+
+            if (status.RobotState == RobotState.Stopped)
+            {
+                await RecordArrivalAsync(command, ct);
+                return;
+            }
+
+            await Task.Delay(PollIntervalMs, ct);
+        }
+
+        ct.ThrowIfCancellationRequested();
+    }
+
+    /// <summary>도착 시점에 CurrentNodeId 와 LastArrivedPose 를 기록 — Phase1·Phase2 공용</summary>
+    private async Task RecordArrivalAsync(AmrCommand command, CancellationToken ct)
+    {
+        State.CurrentNodeId = command.NodeId;
+
+        try
+        {
+            var arrivedPose = await _amrService.ReadPoseAsync(ct);
+
+            // 의심 데이터 방어 — pose 가 정확히 (0,0) 이면 캐시 안 함
+            if (arrivedPose.X == 0 && arrivedPose.Y == 0)
+            {
+                State.LastArrivedPose = null;
+                AddLog(SequenceStep.WaitArrival,
+                    $"AMR 도착 완료 (NodeId={command.NodeId}, Pose=(0,0) stale 의심 — 캐시 안 함)", true);
+            }
+            else
+            {
+                State.LastArrivedPose = arrivedPose;
+                AddLog(SequenceStep.WaitArrival,
+                    $"AMR 도착 완료 (NodeId={command.NodeId}, Pose=({arrivedPose.X:F1}, {arrivedPose.Y:F1}, {arrivedPose.Angle:F1}°))");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "도착 pose 읽기 실패");
+            State.LastArrivedPose = null;
+            AddLog(SequenceStep.WaitArrival,
+                $"AMR 도착 완료 (NodeId={command.NodeId}, Pose 읽기 실패)");
+        }
     }
 
     /// <summary>Step 5: ARRIVED 전송 → ActionCmd 대기 (설비포트만 대기, 자재포트는 스킵)</summary>
