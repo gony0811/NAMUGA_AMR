@@ -539,4 +539,55 @@ public class IoModuleService : BackgroundService
         => _modbusClient.AllTowerLampsOffAsync(ct);
 
     #endregion
+
+    #region Public Reset / Toggle (UI에서 호출)
+
+    /// <summary>UI에서 호출하는 리셋 — 물리 리셋 스위치 짧게 누른 것과 동일</summary>
+    public Task ResetAsync(CancellationToken ct = default)
+        => HandleResetSwitchAsync(ct);
+
+    /// <summary>
+    /// UI에서 호출하는 Manual↔Auto 토글.
+    /// Manual 전환: Main Program Stop → Manual 전환
+    /// Auto 전환: Auto 전환 → Main Program Run
+    /// </summary>
+    public async Task ManualAutoToggleAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var status = await _cobotService.ReadStatusAsync(ct);
+            var isAuto = status.RobotMode == 0;
+
+            if (isAuto)
+            {
+                // Auto → Manual: Stop → Manual 전환
+                _logger.LogInformation("[토글] Auto→Manual: Main Program Stop 실행");
+                await _cobotService.StopJobAsync(ct);
+                await Task.Delay(500, ct);
+                _logger.LogInformation("[토글] Auto→Manual: ManualAutoSwitch 실행");
+                await _cobotService.ManualAutoSwitchAsync(ct);
+            }
+            else
+            {
+                // Manual → Auto: Auto 전환 → Main Program Run
+                _logger.LogInformation("[토글] Manual→Auto: ManualAutoSwitch 실행");
+                await _cobotService.ManualAutoSwitchAsync(ct);
+                await Task.Delay(500, ct);
+                _logger.LogInformation("[토글] Manual→Auto: StartMainProgram 실행");
+                await _cobotService.StartMainProgramAsync(ct);
+            }
+
+            _logger.LogInformation("[토글] Manual↔Auto 토글 완료");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[토글] Manual↔Auto 토글 실패");
+        }
+    }
+
+    /// <summary>부저 OFF</summary>
+    public Task BuzzOffAsync(CancellationToken ct = default)
+        => SetTowerLampBuzzerAsync(false, ct);
+
+    #endregion
 }

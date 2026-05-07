@@ -6,20 +6,24 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace AMR.Web.Pages;
 
+[IgnoreAntiforgeryToken]
 public class StatusRibbonModel : PageModel
 {
     private readonly AmrModbusTcpClient _amrClient;
     private readonly CobotModbusTcpClient _cobotClient;
     private readonly IoModuleModbusTcpClient _ioClient;
+    private readonly IoModuleService _ioService;
 
     public StatusRibbonModel(
         AmrModbusTcpClient amrClient,
         CobotModbusTcpClient cobotClient,
-        IoModuleModbusTcpClient ioClient)
+        IoModuleModbusTcpClient ioClient,
+        IoModuleService ioService)
     {
         _amrClient = amrClient;
         _cobotClient = cobotClient;
         _ioClient = ioClient;
+        _ioService = ioService;
     }
 
     public void OnGet() { }
@@ -96,6 +100,27 @@ public class StatusRibbonModel : PageModel
         }
 
         return new JsonResult(new { success = true, data = result });
+    }
+
+    /// <summary>리셋 (물리 리셋 스��치 짧게 누름과 동일)</summary>
+    public async Task<IActionResult> OnPostResetAsync(CancellationToken ct)
+    {
+        await _ioService.ResetAsync(ct);
+        return new JsonResult(new { success = true });
+    }
+
+    /// <summary>Manual↔Auto 토글 (물리 리셋 스위치 5초 롱��레스와 동일)</summary>
+    public async Task<IActionResult> OnPostManualAutoToggleAsync(CancellationToken ct)
+    {
+        await _ioService.ManualAutoToggleAsync(ct);
+        return new JsonResult(new { success = true });
+    }
+
+    /// <summary>부저 OFF</summary>
+    public async Task<IActionResult> OnPostBuzzOffAsync(CancellationToken ct)
+    {
+        await _ioService.BuzzOffAsync(ct);
+        return new JsonResult(new { success = true });
     }
 
     private class RibbonStatus

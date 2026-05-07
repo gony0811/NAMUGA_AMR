@@ -1,58 +1,62 @@
-
 # AMR Alarm List
-```
-## Template
-### Alarm Id
-### Alarm Code
-### Alarm Name
-### Condition
-1. Condition 1
-2. Condition 2
-### Description
-- Description of the alarm
-```
-------------------------------------------------------------------------
 
 ## ERR-100
-### ACS Alarm Code: 100
 ### Cobot Not Ready
+### Severity (Level: Warning | Critical)
+- Critical
 ### Condition
 1. Modbus Disconnect
 2. Cobot Disable
 3. Main Program Stop
 4. Manual Mode
-
 ### Description
-- Cobot is not ready to perform transport task
+- Cobot is not ready to perform a transport task
 
-
-## AMR-ERR-101
-### ACS Alarm Code: 101
+## ERR-101
 ### AMR Not Ready
+### Severity (Level: Warning | Critical)
+- Critical
 ### Condition
 1. Modbus Disconnect
 ### Description
-- AMR is not ready to perform transport task
+- AMR is not ready to perform a transport task
 
-
-## AMR-ERR-102
-### ACS Alarm Code: 102
-### Camera does not ready
+## ERR-102
+### Camera Doesn’t Ready
+### Severity (Level: Warning | Critical)
+- Critical
 ### Condition
 1. Camera Disconnect
 ### Description
-- Camera does not ready to perform a transport task
+- Camera is not ready.
 
-## AMR-ERR-103
-### ACS Alarm Code: 103
-### QR Code reading failure
+## ERR-103
+### Cobot Collision Error
+### Severity (Level: Warning | Critical)
+- Critical
 ### Condition
-1. QR Code reading failure
-2. QR Code reading position data is not valid (x = 0, y = 0, theta = 0)
+1. Cobot Collision Detected
 ### Description
-- QR Code reading failure or QR Code reading position data is not valid (x = 0, y = 0, theta = 0)
-- AMR transferState가 ASSIGNED 또는 TRANSFERING_SOURCE 인 경우, Assign된 TransportCommand를 QUEUED상태 할당된 AMR ID도 empty로 rollback 시킴
-- AMR도 ProcessingState를 IDLE로 변경하고 TransferState도 NOTASSIGNED로 변경함
-- 만약 AMR transferState가 TRANSFERING_DEST 인 경우, 아무런 조치도 하지 않음
+- Cobot has detected a collision. Please check the surroundings of the AMR and clear any obstacles.
 
+## ERR-104
+### AMR Map Matching Error
+### Severity (Level: Warning | Critical)
+- Critical
+### Condition
+1. Map Matching Rate < 30%
+### Description
+- AMR is having difficulty matching its current position to the map. Please check the environment and ensure that the AMR can see enough landmarks for localization.
 
+## ERR-105
+### AMR Magazine Unloaded by manually
+### Severity (Level: Warning | Critical)
+- Critical
+### Condition
+1. AMR Processing State is Run
+2. AMR Transfer State is TRANSFERING_DEST
+3. the trigger is when AMR Port Sensor On -> Off
+4. 1, 2, 3 Condition is all true
+
+### Description
+- AMR is having difficulty matching its current position to the map. Please check the environment and ensure that the AMR can see enough landmarks for localization.

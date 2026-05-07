@@ -44,6 +44,18 @@
             <i id="rb-batt-icon" class="bi bi-battery-half"></i>
             <span id="rb-battery">--%</span>
         </span>
+        <!-- Control Buttons -->
+        <span class="d-flex align-items-center gap-1 ms-auto">
+            <button id="btn-reset" class="btn btn-sm btn-outline-light py-0 px-2" style="font-size:0.7rem;" title="Reset (코봇 복구)">
+                <i class="bi bi-arrow-counterclockwise"></i> Reset
+            </button>
+            <button id="btn-manual-auto" class="btn btn-sm btn-outline-warning py-0 px-2" style="font-size:0.7rem;" title="Manual/Auto 토글">
+                <i class="bi bi-toggles"></i> M/A
+            </button>
+            <button id="btn-buzz-off" class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:0.7rem;" title="부저 OFF">
+                <i class="bi bi-volume-mute"></i> Buzz Off
+            </button>
+        </span>
     </div>
 
     <header>
@@ -108,6 +120,27 @@
 
     <script>
         (function () {
+            // Reset 버튼 — 클릭 시 코봇 복구 시퀀스
+            $('#btn-reset').on('click', function () {
+                if (!confirm('리셋(코봇 복구 시퀀스)을 ���행하시겠습니까?')) return;
+                var $btn = $(this).prop('disabled', true);
+                $.post('/StatusRibbon?handler=Reset')
+                    .always(function () { $btn.prop('disabled', false); });
+            });
+
+            // Manual/Auto 토글 — 클릭 즉시 전환
+            $('#btn-manual-auto').on('click', function () {
+                if (!confirm('Manual/Auto 모드를 전환하시겠습니까?')) return;
+                var $btn = $(this).prop('disabled', true);
+                $.post('/StatusRibbon?handler=ManualAutoToggle')
+                    .always(function () { $btn.prop('disabled', false); });
+            });
+
+            // Buzz Off 버튼
+            $('#btn-buzz-off').on('click', function () {
+                $.post('/StatusRibbon?handler=BuzzOff');
+            });
+
             function pollRibbon() {
                 $.getJSON('/StatusRibbon?handler=Status', function (res) {
                     if (!res.success) return;

@@ -26,10 +26,39 @@ public class AlarmService
         if (IsAmrNotReady())
             return Alarm.AmrNotReady;
 
-        if (await IsCobotNotReadyAsync(ct))
+        if (!_cobotService.IsConnected)
             return Alarm.CobotNotReady;
 
+        try
+        {
+            var s = await _cobotService.ReadStatusAsync(ct);
+
+            if (s.EnableState != 1 || s.OperationStatus != 2 || s.RobotMode != 0)
+                return Alarm.CobotNotReady;
+
+            if (s.CollisionDetection == 1)
+                return Alarm.CobotCollision;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Cobot 상태 읽기 실패 — ERR-100 활성으로 판정");
+            return Alarm.CobotNotReady;
+        }
+
+        if (IsAmrMapMatchingError())
+            return Alarm.AmrMapMatchingError;
+
         return null;
+    }
+
+    /// <summary>
+    /// ERR-104 AMR Map Matching Error 조건 평가.
+    /// 맵 일치율이 30% 미만이면 활성.
+    /// </summary>
+    private bool IsAmrMapMatchingError()
+    {
+        var status = _amrService.LastStatus;
+        return status != null && status.MapStatusPercent < 30f;
     }
 
     /// <summary>
@@ -39,28 +68,5 @@ public class AlarmService
     private bool IsAmrNotReady()
     {
         return !_amrService.IsConnected;
-    }
-
-    /// <summary>
-    /// ERR-100 Cobot Not Ready 조건 평가.
-    /// 1) Modbus Disconnect, 2) Cobot Disable, 3) Main Program Stop, 4) Manual Mode 중 하나라도 참이면 활성.
-    /// </summary>
-    private async Task<bool> IsCobotNotReadyAsync(CancellationToken ct)
-    {
-        if (!_cobotService.IsConnected)
-            return true;
-
-        try
-        {
-            var s = await _cobotService.ReadStatusAsync(ct);
-            return s.EnableState != 1
-                || s.OperationStatus != 2
-                || s.RobotMode != 0;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Cobot 상태 읽기 실패 — ERR-100 활성으로 판정");
-            return true;
-        }
     }
 }
