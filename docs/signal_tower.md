@@ -14,31 +14,31 @@ I/O 모듈(LS산전 XEL-BSSRT)의 Coil 출력을 통해 제어한다.
 | Green | Y002 | 2 | `TowerLampGreen` |
 | Buzzer | Y003 | 3 | `TowerLampBuzzer` |
 
-## 운영 조건
+## 로봇 시그널 타워 운영
 
-### Green — 정상 운영
+### 대기중
 
-| 조건 | Green | Orange | Red | Buzzer |
-|------|-------|--------|-----|--------|
+| 조건            | Green | Orange | Red | Buzzer |
+|---------------|-------|--------|-----|--------|
 | AMR 대기 (Idle) | ON | ON     | OFF | OFF |
-| 시퀀스 정상 완료 | ON | ON     | OFF | OFF |
+| 작업 정상 완료      | ON | ON     | OFF | OFF |
 
-### Orange — 작업 중
+### 작업 / 이동 진행중
 
-| 조건 | Green | Orange | Red | Buzzer |
-|------|----|--------|-----|--------|
-| AMR 이동 중 | ON | OFF    | OFF | OFF |
-| 시퀀스 실행 중 (Cobot 작업 등) | ON | OFF    | OFF | OFF |
-| 베터리 20%이하| ON | 점멸(1초) | OFF | OFF |
+| 조건                   | Green | Orange | Red | Buzzer |
+|----------------------|----|--------|-----|--------|
+| AMR 이동 중             | ON | OFF    | OFF | OFF |
+| 작업 진행 중 (Cobot 작업 등) | ON | OFF    | OFF | OFF |
+| 베터리 30%이하            | ON | 점멸(1초) | OFF | OFF |
 
-### Red — 이상 / 정지
+### 이상 / 정지
 
-| 조건 | Green | Orange | Red | Buzzer |
-|------|-------|--------|-----|--------|
-| 시퀀스 실패 (Faulted) | OFF | OFF | ON | ON |
-| EMO (비상정지) 활성 | OFF | OFF | ON | ON |
+| 조건                    | Green | Orange | Red | Buzzer |
+|-----------------------|-------|--------|-----|--------|
+| 작업 실패 (Faulted)       | OFF | OFF | ON | ON |
+| EMO (비상정지) 활성         | OFF | OFF | ON | ON |
 | 통신 끊김 (AMR/Cobot/I/O) | OFF | OFF | ON | OFF |
-| 타임아웃 (도착 대기 등) | OFF | OFF | ON | ON |
+| 타임아웃 (도착 대기 등)        | OFF | OFF | ON | ON |
 
 ## 우선순위
 

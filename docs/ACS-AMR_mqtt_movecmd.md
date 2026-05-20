@@ -35,11 +35,13 @@ ACS                           AMR
 
 ```json
 {
-  "cmdId": "20260325_160501_001",
-  "command": "moveCmd",
-  "nodeId": "N0001",
-  "port": "LEFT",
-  "jobType": "LOAD"
+"cmdId": "20260325_160501_001",
+"command": "moveCmd",
+"nodeId": "N0001",
+"port": "LEFT",
+"jobType": "LOAD",
+  "portType": "FACILITY",
+  "amrSlot": 1
 }
 ```
 
@@ -50,6 +52,57 @@ ACS                           AMR
 | `nodeId` | string | O | 위치 태그 (예: N0001) |
 | `port` | string | - | 포트 위치 (LEFT / RIGHT) |
 | `jobType` | string | - | 작업 유형 (LOAD / UNLOAD / EXCHANGE) |
+| `portType` | string | - | 포트 유형 (`FACILITY`=설비포트 / `MATERIAL`=자재포트). 미지정 시 자재포트로 간주 |
+| `amrSlot` | int | - | AMR 슬롯 번호 (1~4), 기본값 1 |
+
+---
+
+## PortType에 따른 시퀀스 차이
+
+`portType` 값에 따라 AMR 측 시퀀스 동작이 달라진다. ACS는 목적지 포트의 성격에 맞춰 값을 지정해야 한다.
+
+| 단계 | FACILITY (설비포트) | MATERIAL (자재포트) |
+|------|---------------------|---------------------|
+| 도착 후 ActionCmd 대기 | ACS의 ActionCmd 수신까지 최대 120초 대기 | 대기 없이 다음 단계 진행 |
+
+실제 분기 로직: `AMR/Service/MoveSequenceRunner.cs:577-587`
+
+---
+
+## Cobot Digital Input 매핑
+
+`jobType` / `port` / `amrSlot` 조합에 따라 AMR이 Cobot에 트리거(ON 시키는) DI 번호가 결정된다.
+
+### 오프셋 정의
+
+- `portSlotOffset` = (`port` == `RIGHT`) ? 1 : 0  — 포트는 좌/우 2슬롯
+- `amrSlotOffset` = `amrSlot` − 1  — AMR은 1~4 슬롯, 0~3으로 변환
+
+### Step 8 — PICK
+
+| jobType | portType | PICK 대상 | DI 번호 | 결정 변수 |
+|---------|----------|-----------|---------|-----------|
+| LOAD    | (무관)   | AMR 슬롯에서 PICK | `0 + amrSlotOffset` (DI0~DI3) | `amrSlot` |
+| UNLOAD  | FACILITY | 설비포트에서 PICK | `10 + portSlotOffset` (LEFT=DI10, RIGHT=DI11) | `port` |
+| UNLOAD  | MATERIAL | 자재포트에서 PICK | `14 + portSlotOffset` (LEFT=DI14, RIGHT=DI15) | `port` |
+
+### Step 9 — PLACE
+
+| jobType | portType | PLACE 대상 | DI 번호 | 결정 변수 |
+|---------|----------|------------|---------|-----------|
+| LOAD    | FACILITY | 설비포트에 PLACE | `8 + portSlotOffset` (LEFT=DI8, RIGHT=DI9) | `port` |
+| LOAD    | MATERIAL | 자재포트에 PLACE | `12 + portSlotOffset` (LEFT=DI12, RIGHT=DI13) | `port` |
+| UNLOAD  | (무관)   | AMR 슬롯에 PLACE | `4 + amrSlotOffset` (DI4~DI7) | `amrSlot` |
+
+### 고정 DI
+
+| 동작 | portType | DI 번호 | 단계 |
+|------|----------|---------|------|
+| QR 읽기 위치 이동 | FACILITY | DI16 | Step 6 |
+| QR 읽기 위치 이동 | MATERIAL | DI17 | Step 6 |
+| Home 위치 이동    | (무관)   | DI25 | Step 10 |
+
+소스: `AMR/Service/MoveSequenceRunner.cs:656-720` (PICK/PLACE), `:609-619` (QR), `:723-744` (Complete)
 
 ---
 
@@ -135,6 +188,8 @@ ACS                           AMR
 | 구성 요소 | 파일 |
 |----------|------|
 | 명령 처리 | `AMR/Service/MainSequenceService.cs` — `HandleMoveCmdAsync()` |
+| 시퀀스 실행 | `AMR/Service/MoveSequenceRunner.cs` — `PortType` 기반 ActionCmd 대기/Cobot DI 분기 |
+| 명령 모델 | `AMR/Models/AmrCommand.cs` |
 | AMR 제어 | `AMR/Service/AmrService.cs` — `SetTaskIndexAsync()`, `SetJobIndexAsync()` |
 | MQTT 수신 | `AMR/Service/MqttService.cs` — `OnCommandReceived` 이벤트 |
 | MQTT 응답 | `AMR/Service/MqttService.cs` — `PublishReplyAsync()` |

@@ -609,12 +609,12 @@ public class MoveSequenceRunner
     /// <summary>Step 6: Cobot을 QR 코드 읽기 위치로 이동</summary>
     private async Task Step_CobotQrPosition(AmrCommand command, CancellationToken ct)
     {
-        // TODO: 자재포트 티칭 완료 후 DI17 분기 추가
-        // 현재는 설비/자재 모두 설비포트 QR 위치(DI16) 사용
-        ushort qrDiIndex = 16;
+        var isFacility = string.Equals(command.PortType, "FACILITY", StringComparison.OrdinalIgnoreCase);
+        var portKind = isFacility ? "설비포트" : "자재포트";
+        ushort qrDiIndex = isFacility ? (ushort)16 : (ushort)17;
 
-        AddLog(SequenceStep.CobotQrPosition, $"Cobot QR 읽기 위치 이동 (DI{qrDiIndex}, 설비포트)");
-        await SendCobotCommandAndWaitAsync(qrDiIndex, "QR 읽기 위치 이동 (설비포트)", ct);
+        AddLog(SequenceStep.CobotQrPosition, $"Cobot QR 읽기 위치 이동 (DI{qrDiIndex}, {portKind})");
+        await SendCobotCommandAndWaitAsync(qrDiIndex, $"QR 읽기 위치 이동 ({portKind})", ct);
         AddLog(SequenceStep.CobotQrPosition, "Cobot QR 읽기 위치 이동 완료");
     }
 
@@ -678,10 +678,10 @@ public class MoveSequenceRunner
         else
         {
             // UNLOAD: 설비/자재포트에서 PICK
-            // TODO: 자재포트 티칭 완료 후 DI14~15 분기 추가
-            // 현재는 설비/자재 모두 설비포트 PICK DI(DI10~11) 사용
-            pickDiIndex = (ushort)(10 + portSlotOffset);
-            pickTarget = $"설비포트 PICK slot {portSlotOffset + 1}";
+            var basePickDi = isFacility ? 10 : 14;
+            var portKind = isFacility ? "설비포트" : "자재포트";
+            pickDiIndex = (ushort)(basePickDi + portSlotOffset);
+            pickTarget = $"{portKind} PICK slot {portSlotOffset + 1}";
         }
 
         AddLog(SequenceStep.CobotPickup, $"PICK 시작 (DI{pickDiIndex}, {pickTarget})");
@@ -703,10 +703,10 @@ public class MoveSequenceRunner
         if (isLoad)
         {
             // LOAD: 설비/자재포트에 PLACE
-            // TODO: 자재포트 티칭 완료 후 DI12~13 분기 추가
-            // 현재는 설비/자재 모두 설비포트 PLACE DI(DI8~9) 사용
-            placeDiIndex = (ushort)(8 + portSlotOffset);
-            placeTarget = $"설비포트 PLACE slot {portSlotOffset + 1}";
+            var basePlaceDi = isFacility ? 8 : 12;
+            var portKind = isFacility ? "설비포트" : "자재포트";
+            placeDiIndex = (ushort)(basePlaceDi + portSlotOffset);
+            placeTarget = $"{portKind} PLACE slot {portSlotOffset + 1}";
         }
         else
         {
