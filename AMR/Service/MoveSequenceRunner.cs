@@ -638,7 +638,16 @@ public class MoveSequenceRunner
         // offset 값을 Cobot AI 레지스터에 전달 (mm 단위, short → ushort 비트 변환)
         var dx = (short)Math.Clamp((int)qrResult.RealDeltaXMm, short.MinValue, short.MaxValue);
         var dy = (short)Math.Clamp((int)qrResult.RealDeltaYMm, short.MinValue, short.MaxValue);
-        var dTheta = (short)Math.Clamp((int)(qrResult.RotationAngle * 100), short.MinValue, short.MaxValue);
+        // dTheta 는 0.01° 단위. Cobot todrz 함수가 ±9000 (±90°) 범위 기준이므로
+        // 그 범위를 벗어나면 잘못된 보정이 발생 — 동일하게 clamp.
+        const int DThetaMaxAbs = 9000;
+        var dThetaRaw = (int)(qrResult.RotationAngle * 100);
+        var dTheta = (short)Math.Clamp(dThetaRaw, -DThetaMaxAbs, DThetaMaxAbs);
+        if (dThetaRaw != dTheta)
+        {
+            AddLog(SequenceStep.CameraQrRead,
+                $"dTheta 범위 초과 — raw={dThetaRaw} → clamped={dTheta} (±{DThetaMaxAbs}, ±90°)", true);
+        }
 
         AddLog(SequenceStep.CameraQrRead, $"Cobot AI0(dx)={dx}mm 쓰기");
         await _cobotService.WriteAnalogInputAsync(0, unchecked((ushort)dx), ct);  // AI0: dx
