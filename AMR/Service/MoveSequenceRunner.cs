@@ -493,7 +493,8 @@ public class MoveSequenceRunner
         await _mqttService.PublishReplyAsync(arrivedReply, ct);
         AddLog(SequenceStep.WaitActionCmd, $"ARRIVED 전송 완료 (CmdId={command.CmdId})");
 
-        var isFacility = string.Equals(command.PortType, "FACILITY", StringComparison.OrdinalIgnoreCase);
+        // PortType 에 "EQP" 가 포함되어 있으면 설비포트, 아니면 자재포트
+        var isFacility = command.PortType?.Contains("EQP", StringComparison.OrdinalIgnoreCase) ?? false;
 
         if (!isFacility)
         {
@@ -528,7 +529,8 @@ public class MoveSequenceRunner
     /// <summary>Step 6: Cobot을 QR 코드 읽기 위치로 이동</summary>
     private async Task Step_CobotQrPosition(AmrCommand command, CancellationToken ct)
     {
-        var isFacility = string.Equals(command.PortType, "FACILITY", StringComparison.OrdinalIgnoreCase);
+        // PortType 에 "EQP" 가 포함되어 있으면 설비포트, 아니면 자재포트
+        var isFacility = command.PortType?.Contains("EQP", StringComparison.OrdinalIgnoreCase) ?? false;
         var portKind = isFacility ? "설비포트" : "자재포트";
         ushort qrDiIndex = isFacility ? (ushort)16 : (ushort)17;
 
@@ -583,7 +585,8 @@ public class MoveSequenceRunner
         //   자재포트 PLACE: DI12~13 (슬롯1~2) 자재포트 PICK: DI14~15 (슬롯1~2)
         // LEFT → 슬롯1, RIGHT → 슬롯2
         var isLoad = string.Equals(command.JobType, "LOAD", StringComparison.OrdinalIgnoreCase);
-        var isFacility = string.Equals(command.PortType, "FACILITY", StringComparison.OrdinalIgnoreCase);
+        // PortType 에 "EQP" 가 포함되어 있으면 설비포트, 아니면 자재포트
+        var isFacility = command.PortType?.Contains("EQP", StringComparison.OrdinalIgnoreCase) ?? false;
         var portSlotOffset = string.Equals(command.Port, "RIGHT", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         var amrSlotOffset = Math.Clamp(command.AmrSlot, 1, 4) - 1;
 
@@ -614,7 +617,8 @@ public class MoveSequenceRunner
     private async Task Step_CobotPlace(AmrCommand command, CancellationToken ct)
     {
         var isLoad = string.Equals(command.JobType, "LOAD", StringComparison.OrdinalIgnoreCase);
-        var isFacility = string.Equals(command.PortType, "FACILITY", StringComparison.OrdinalIgnoreCase);
+        // PortType 에 "EQP" 가 포함되어 있으면 설비포트, 아니면 자재포트
+        var isFacility = command.PortType?.Contains("EQP", StringComparison.OrdinalIgnoreCase) ?? false;
         var portSlotOffset = string.Equals(command.Port, "RIGHT", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         var amrSlotOffset = Math.Clamp(command.AmrSlot, 1, 4) - 1;
 

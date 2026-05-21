@@ -20,7 +20,7 @@ public class AmrCommand
     /// <summary>목적지에서 수행할 작업 (LOAD, UNLOAD, EXCHANGE)</summary>
     public string? JobType { get; set; }
 
-    /// <summary>포트 유형 (FACILITY=설비포트, MATERIAL=자재포트)</summary>
+    /// <summary>포트 유형 — "EQP" 문자열 포함 시 설비포트, 그 외(예: MATERIAL)는 자재포트</summary>
     public string? PortType { get; set; }
 
     /// <summary>AMR 슬롯 번호 (1~4)</summary>

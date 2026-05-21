@@ -28,7 +28,7 @@ public class SequenceState
     /// <summary>작업 유형 (LOAD/UNLOAD)</summary>
     public string? JobType { get; set; }
 
-    /// <summary>포트 유형 (FACILITY/MATERIAL)</summary>
+    /// <summary>포트 유형 — "EQP" 포함 시 설비포트, 그 외는 자재포트</summary>
     public string? PortType { get; set; }
 
     /// <summary>AMR 슬롯 번호 (1~4)</summary>
