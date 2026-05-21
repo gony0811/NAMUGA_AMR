@@ -81,7 +81,8 @@ public class MoveSequenceRunner
             // Step 2: MoveCmdReply
             await ExecuteStepInternalAsync(SequenceStep.MoveCmdReply, command, token);
 
-            var isCharge = string.Equals(command.JobType, "CHARGE", StringComparison.OrdinalIgnoreCase);
+            // JobType 에 "CHARGE" 문자열이 포함되면 충전 시퀀스 (예: "CHARGE", "GO_CHARGE", "CHARGE_FAST" 등)
+            var isCharge = command.JobType?.Contains("CHARGE", StringComparison.OrdinalIgnoreCase) ?? false;
 
             // CHARGE 작업: AMR 이동 전 Cobot 을 Phome 으로 (충돌 방지)
             if (isCharge)
