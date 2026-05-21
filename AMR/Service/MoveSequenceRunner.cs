@@ -81,6 +81,15 @@ public class MoveSequenceRunner
             // Step 2: MoveCmdReply
             await ExecuteStepInternalAsync(SequenceStep.MoveCmdReply, command, token);
 
+            var isCharge = string.Equals(command.JobType, "CHARGE", StringComparison.OrdinalIgnoreCase);
+
+            // CHARGE 작업: AMR 이동 전 Cobot 을 Phome 으로 (충돌 방지)
+            if (isCharge)
+            {
+                AddLog(SequenceStep.SendMoveCommand, "CHARGE 작업 — AMR 이동 전 Cobot Phome 이동");
+                await SendCobotCommandAndWaitAsync(25, "Phome (CHARGE 사전 이동)", token);
+            }
+
             // 이동 시작 — 도착 전까지 현재 위치 정보 무효화 (무조건 이동, 스킵 없음)
             State.CurrentNodeId = null;
 
@@ -89,6 +98,13 @@ public class MoveSequenceRunner
 
             // Step 4: WaitArrival
             await ExecuteStepInternalAsync(SequenceStep.WaitArrival, command, token);
+
+            // CHARGE 작업은 도착 즉시 완료 (Step 5~9 스킵, Cobot 은 이미 Phome 에 있음)
+            if (isCharge)
+            {
+                await CompleteChargeAsync(command, token);
+                return;
+            }
 
             // Step 5: WaitActionCmd
             await ExecuteStepInternalAsync(SequenceStep.WaitActionCmd, command, token);
@@ -645,6 +661,31 @@ public class MoveSequenceRunner
 
         State.CurrentStep = SequenceStep.Idle;
         AddLog(SequenceStep.Complete, "시퀀스 완료 — Idle 복귀");
+    }
+
+    /// <summary>
+    /// CHARGE 작업 전용 완료 처리 — Cobot 은 이미 Phome 에 있으므로 DI25 재호출 없이
+    /// COMPLETED reply 만 전송하고 Idle 복귀.
+    /// </summary>
+    private async Task CompleteChargeAsync(AmrCommand command, CancellationToken ct)
+    {
+        State.CurrentStep = SequenceStep.Complete;
+        State.StepStartedAt = DateTime.Now;
+        AddLog(SequenceStep.Complete, "CHARGE 시퀀스 완료 처리");
+
+        var reply = new CommandReply
+        {
+            CmdId = command.CmdId,
+            JobType = command.JobType,
+            Status = "COMPLETED",
+            ResultCode = 0,
+            Message = $"CHARGE 완료: {command.NodeId}",
+            Timestamp = DateTime.UtcNow.ToString("o")
+        };
+        await _mqttService.PublishReplyAsync(reply, ct);
+
+        State.CurrentStep = SequenceStep.Idle;
+        AddLog(SequenceStep.Complete, $"CHARGE 시퀀스 완료 — Idle 복귀 ({command.NodeId})");
     }
 
     #endregion

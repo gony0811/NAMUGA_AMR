@@ -24,23 +24,46 @@ public record AmrStatusMessage
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public AbnormalInfo? Abnormal { get; init; }
 
+    /// <summary>배터리 잔량이 이 값 미만이면서 충전중이면 RunState=Charge</summary>
+    private const float LowBatteryPercent = 20f;
+
     /// <summary>RobotStatus에서 MQTT 전송용 DTO로 변환</summary>
-    public static AmrStatusMessage FromRobotStatus(RobotStatus status, Alarm? alarm = null, AbnormalInfo? abnormal = null) => new()
+    public static AmrStatusMessage FromRobotStatus(RobotStatus status, Alarm? alarm = null, AbnormalInfo? abnormal = null)
     {
-        State = new AmrStateInfo
+        // 배터리 < 20% AND 충전중 → Charge
+        // 그 외엔 RobotState 기준 Run/Stop (≥20% 이면 Stop = Idle 로 새 명령 수용)
+        RunState runState;
+        if (status.Battery.LevelPercent < LowBatteryPercent
+            && status.Battery.ChargingState == ChargingState.Charging)
         {
-            RunState = status.RobotState == RobotState.Started ? RunState.Run : RunState.Stop,
-            FullState = FullState.Empty,
-            WorkState = status.WorkStatus,
-            VehicleDestNode = string.Empty
-        },
-        Pose = status.Pose,
-        Error = new ErrorInfo
+            runState = RunState.Charge;
+        }
+        else if (status.RobotState == RobotState.Started)
         {
-            Code = alarm?.Code ?? 0,
-            Name = alarm?.Name ?? string.Empty
-        },
-        Battery = status.Battery,
-        Abnormal = abnormal
-    };
+            runState = RunState.Run;
+        }
+        else
+        {
+            runState = RunState.Stop;
+        }
+
+        return new AmrStatusMessage
+        {
+            State = new AmrStateInfo
+            {
+                RunState = runState,
+                FullState = FullState.Empty,
+                WorkState = status.WorkStatus,
+                VehicleDestNode = string.Empty
+            },
+            Pose = status.Pose,
+            Error = new ErrorInfo
+            {
+                Code = alarm?.Code ?? 0,
+                Name = alarm?.Name ?? string.Empty
+            },
+            Battery = status.Battery,
+            Abnormal = abnormal
+        };
+    }
 }

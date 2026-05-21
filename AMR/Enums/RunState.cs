@@ -5,6 +5,7 @@ namespace AMR.Enums;
 /// </summary>
 public enum RunState : ushort
 {
-    Stop = 1,
-    Run = 2
+    Stop = 1,    // 정지 / Idle (새 명령 수용 가능)
+    Run = 2,    // 이동 중
+    Charge = 3   // 배터리 < 20% 이면서 충전 중
 }
