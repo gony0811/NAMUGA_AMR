@@ -1,0 +1,152 @@
+@page
+@model AMR.Web.Pages.AutoChargeModel
+@{
+    ViewData["Title"] = "Auto Charge";
+}
+
+<div class="container mt-3" style="max-width: 720px;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>자동 충전</h2>
+        <span id="enabledBadge" class="badge bg-secondary">OFF</span>
+    </div>
+    <hr />
+
+    <div class="card mb-3">
+        <div class="card-header">
+            <h5 class="card-title mb-0">설정</h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                상위(ACS) 명령이 없고 모든 시퀀스가 끝난 후 지정한 시간 동안 새 명령이 안 오면
+                자동으로 <code>JobType=CHARGE</code> 명령을 생성해서 충전소로 이동합니다.
+                이미 충전 노드에 도착한 상태면 트리거하지 않습니다.
+            </p>
+
+            <div class="row g-2 mb-3">
+                <div class="col-md-4">
+                    <label class="form-label form-label-sm">기능 ON/OFF</label>
+                    <div class="d-flex gap-2">
+                        <button id="btnOn" class="btn btn-success flex-fill" onclick="setEnabled(true)">ON</button>
+                        <button id="btnOff" class="btn btn-secondary flex-fill" onclick="setEnabled(false)">OFF</button>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label form-label-sm">Idle 판정 시간 (초)</label>
+                    <input type="number" id="timeoutInput" class="form-control form-control-sm" min="5" max="3600" step="1" value="30" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label form-label-sm">충전 NodeId</label>
+                    <input type="text" id="nodeInput" class="form-control form-control-sm" placeholder="예: N007" />
+                </div>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="applyOptions()">옵션 적용</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h5 class="card-title mb-0">상태</h5>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+                <tbody>
+                    <tr>
+                        <th style="width:35%">활성화</th>
+                        <td><span id="enabledLabel">-</span></td>
+                    </tr>
+                    <tr>
+                        <th>현재 설정</th>
+                        <td>
+                            Idle <span id="timeoutLabel">-</span>초,
+                            ChargeNode = <code id="nodeLabel">-</code>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>마지막 활동 시각</th>
+                        <td><span id="lastActivityLabel">-</span></td>
+                    </tr>
+                    <tr>
+                        <th>Idle 경과</th>
+                        <td><span id="idleLabel">-</span> 초</td>
+                    </tr>
+                    <tr>
+                        <th>다음 트리거까지</th>
+                        <td><span id="remainingLabel">-</span> 초</td>
+                    </tr>
+                    <tr>
+                        <th>마지막 자동 충전 트리거</th>
+                        <td><span id="lastTriggerLabel" class="text-muted">없음</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    let pollTimer = null;
+
+    function pollState() {
+        $.getJSON('/AutoCharge?handler=State', function (s) {
+            const enabledBadge = s.enabled
+                ? '<span class="badge bg-success">ON</span>'
+                : '<span class="badge bg-secondary">OFF</span>';
+            $('#enabledLabel').html(enabledBadge);
+
+            $('#enabledBadge')
+                .removeClass('bg-secondary bg-success')
+                .addClass(s.enabled ? 'bg-success' : 'bg-secondary')
+                .text(s.enabled ? 'ON' : 'OFF');
+
+            $('#timeoutLabel').text(s.idleTimeoutSeconds);
+            $('#nodeLabel').text(s.chargeNodeId || '(미설정)');
+            $('#lastActivityLabel').text(s.lastActivityAt);
+            $('#idleLabel').text(s.idleSeconds);
+            $('#remainingLabel').text(s.enabled && s.chargeNodeId ? s.remainingSeconds : '-');
+            $('#lastTriggerLabel').text(s.lastTriggerAt || '없음')
+                .toggleClass('text-muted', !s.lastTriggerAt);
+
+            // 입력 필드는 사용자가 편집 중이 아닐 때만 동기화
+            if (!$('#timeoutInput').is(':focus')) $('#timeoutInput').val(s.idleTimeoutSeconds);
+            if (!$('#nodeInput').is(':focus'))    $('#nodeInput').val(s.chargeNodeId);
+
+            $('#btnOn').toggleClass('btn-success', !s.enabled).toggleClass('btn-outline-success', s.enabled);
+            $('#btnOff').toggleClass('btn-secondary', s.enabled).toggleClass('btn-outline-secondary', !s.enabled);
+        });
+    }
+
+    function setEnabled(enabled) {
+        $.ajax({
+            url: '/AutoCharge?handler=Set',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ enabled: enabled }),
+            success: pollState
+        });
+    }
+
+    function applyOptions() {
+        const payload = {
+            idleTimeoutSeconds: parseInt($('#timeoutInput').val()),
+            chargeNodeId: $('#nodeInput').val()
+        };
+        $.ajax({
+            url: '/AutoCharge?handler=Set',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(payload),
+            success: pollState
+        });
+    }
+
+    $(function () {
+        pollState();
+        pollTimer = setInterval(pollState, 1000);
+    });
+
+    $(window).on('beforeunload', function () {
+        if (pollTimer) clearInterval(pollTimer);
+    });
+</script>
+}

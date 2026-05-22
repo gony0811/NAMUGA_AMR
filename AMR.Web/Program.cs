@@ -108,6 +108,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<MainSequenceServic
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SignalTowerService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CameraService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MovementSoundService>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<IdleChargeService>());
 
 // SQ   Lite 데이터베이스 설정
 var connectionString = "Data Source=amr.db";
