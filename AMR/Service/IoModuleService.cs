@@ -43,7 +43,7 @@ public class IoModuleService : BackgroundService
     private const int CobotTimeoutSeconds = 60;
     private const int PollIntervalMs = 500;
     private const int InputPollIntervalMs = 200;       // 메인 입력 폴링 주기 (짧은 펄스 캐치)
-    private const int LongPressDurationMs = 5000;       // 5초 이상 누르면 Manual↔Auto 토글
+    private const int LongPressDurationMs = 5000;       // 5초 이상 누르면 ClearFaults + Stop + Manual 강제 전환
 
     public IoModuleService(IoModuleModbusTcpClient modbusClient, CobotService cobotService, MoveSequenceRunner sequenceRunner, ILogger<IoModuleService> logger)
     {
@@ -211,8 +211,8 @@ public class IoModuleService : BackgroundService
 
     /// <summary>
     /// 매 폴링 사이클마다 호출 — 짧게 누름(OFF→ON→OFF)은 복구 시퀀스,
-    /// 5초 이상 누름은 Manual↔Auto 토글로 분기. 시퀀스는 fire-and-forget으로
-    /// 백그라운드 실행하여 폴링 루프가 막히지 않도록 한다.
+    /// 5초 이상 누름은 코봇 에러 상태에서도 강제로 안전 상태(ClearFaults → Stop → Manual)
+    /// 로 전환. 시퀀스는 fire-and-forget으로 백그라운드 실행하여 폴링 루프가 막히지 않도록 한다.
     /// </summary>
     private void HandleResetSwitchInputs(bool resetNow, CancellationToken stoppingToken)
     {
@@ -235,11 +235,11 @@ public class IoModuleService : BackgroundService
                 (now - pressedAt).TotalMilliseconds >= LongPressDurationMs)
             {
                 _longPressTriggered = true;
-                _logger.LogInformation("리셋 스위치 5초 이상 길게 누름 감지 — 코봇 Manual↔Auto 토글");
+                _logger.LogInformation("리셋 스위치 5초 이상 길게 누름 감지 — 에러 해제 + Stop + Manual 강제 전환");
 
                 if (_isHandlingToggle)
                 {
-                    _logger.LogWarning("이미 Manual↔Auto 토글 진행 중 — 추가 트리거 무시");
+                    _logger.LogWarning("이미 Manual 강제 전환 진행 중 — 추가 트리거 무시");
                 }
                 else
                 {
@@ -252,7 +252,7 @@ public class IoModuleService : BackgroundService
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogError(ex, "[토글] fire-and-forget Task 예외");
+                            _logger.LogError(ex, "[Manual전환] fire-and-forget Task 예외");
                         }
                         finally { _isHandlingToggle = false; }
                     }, stoppingToken);
@@ -303,7 +303,14 @@ public class IoModuleService : BackgroundService
         }
     }
 
-    /// <summary>리셋 스위치 5초 이상 롱프레스 시 코봇 Manual↔Auto 토글</summary>
+    /// <summary>
+    /// 리셋 스위치 5초 이상 롱프레스 시 코봇을 강제로 안전 상태로 전환.
+    /// 코봇 에러 발생 상태에서도 동작하도록 다음 순서로 처리:
+    ///   1) ClearAllFaults — 에러 해제
+    ///   2) StopJob — Main Program 정지
+    ///   3) Auto 모드면 ManualAutoSwitch — Manual 로 전환 (이미 Manual 이면 스킵)
+    /// 각 단계는 best-effort — 개별 실패가 후속 단계를 막지 않는다.
+    /// </summary>
     private async Task HandleManualAutoToggleAsync(CancellationToken ct)
     {
         try
@@ -317,14 +324,61 @@ public class IoModuleService : BackgroundService
                 await Task.Delay(150, ct);
             }
 
-            _logger.LogInformation("[토글] ManualAutoSwitch 실행");
-            await _cobotService.ManualAutoSwitchAsync(ct);
+            // 1. 전체 오류 해제 — 에러 발생 상태에서도 후속 명령이 먹히도록
+            try
+            {
+                _logger.LogInformation("[Manual전환] 전체 오류 해제(ClearAllFaults) 실행");
+                await _cobotService.ClearAllFaultsAsync(ct);
+                await Task.Delay(1000, ct);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[Manual전환] ClearAllFaults 실패 — 다음 단계 계속 진행");
+            }
 
-            _logger.LogInformation("[토글] Manual↔Auto 토글 완료");
+            // 2. Main Program Stop
+            try
+            {
+                _logger.LogInformation("[Manual전환] Main Program Stop 실행");
+                await _cobotService.StopJobAsync(ct);
+                await Task.Delay(500, ct);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[Manual전환] StopJob 실패 — 다음 단계 계속 진행");
+            }
+
+            // 3. 현재 모드 확인 후 Auto 면 Manual 로 전환 (RobotMode: 0=Auto, 1=Manual)
+            try
+            {
+                var status = await _cobotService.ReadStatusAsync(ct);
+                if (status.RobotMode == 0)
+                {
+                    _logger.LogInformation("[Manual전환] Auto → Manual 전환 (ManualAutoSwitch 실행)");
+                    await _cobotService.ManualAutoSwitchAsync(ct);
+                }
+                else
+                {
+                    _logger.LogInformation("[Manual전환] 이미 Manual 모드 — 전환 스킵");
+                }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[Manual전환] Manual 전환 실패");
+            }
+
+            _logger.LogInformation("[Manual전환] 5초 롱프레스 시퀀스 완료 (ClearFaults + Stop + Manual)");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[토글] Manual↔Auto 토글 실패");
+            _logger.LogError(ex, "[Manual전환] 5초 롱프레스 시퀀스 실패");
         }
     }
 
