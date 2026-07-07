@@ -39,9 +39,9 @@ ACS                           AMR
 "command": "moveCmd",
 "nodeId": "N0001",
 "port": "LEFT",
-"jobType": "LOAD",
-  "portType": "FACILITY",
-  "amrSlot": 1
+"jobType": "LOAD", 
+"portType": "FACILITY",
+"amrSlot": 1
 }
 ```
 
