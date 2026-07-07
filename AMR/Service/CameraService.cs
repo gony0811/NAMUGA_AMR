@@ -46,6 +46,11 @@ public class CameraService : BackgroundService
     private readonly object _qrLock = new();
     private volatile bool _isConnected;
 
+    // 매거진 감지용 — 최신 raw depth Mat 보관 (16-bit ushort, mm 단위)
+    // 매 프레임마다 capture loop 에서 Clone 으로 갱신, 이전 Mat 은 Dispose
+    private Mat? _latestDepthMat;
+    private readonly object _latestDepthLock = new();
+
     private readonly BarcodeReader _qrReader = new()
     {
         Options = new ZXing.Common.DecodingOptions
@@ -311,6 +316,16 @@ public class CameraService : BackgroundService
 
             if (hasDepth)
             {
+                // 매거진 감지용 raw depth Mat 보관 — Clone 후 이전 Mat 즉시 Dispose
+                var newSnap = depthFrame.Clone();
+                Mat? oldSnap;
+                lock (_latestDepthLock)
+                {
+                    oldSnap = _latestDepthMat;
+                    _latestDepthMat = newSnap;
+                }
+                oldSnap?.Dispose();
+
                 var depthBuf = ColorizeAndEncodeDepth(depthFrame, normalized, colorized);
                 lock (_depthLock)
                 {
@@ -375,7 +390,9 @@ public class CameraService : BackgroundService
                     depthPixelY = Math.Clamp(depthPixelY, 0, depthFrame.Height - 1);
 
                     // 16-bit depth 값 읽기 (Orbbec: mm 단위)
-                    depthMm = depthFrame.At<ushort>(depthPixelY, depthPixelX);
+                    // ★ 단일 픽셀은 depth 노이즈/홀(0) 에 취약해 offset 이 불규칙하게 튐.
+                    //   중심 주변 영역의 median depth 로 안정화 (홀·엣지 outlier 제거).
+                    depthMm = SampleDepthMedian(depthFrame, depthPixelX, depthPixelY, 5);
 
                     // depth가 유효한 경우 (0 = 측정 불가) 실제 거리 계산
                     if (depthMm > 0)
@@ -552,11 +569,129 @@ public class CameraService : BackgroundService
         return EncodeToJpeg(colorized);
     }
 
+    /// <summary>
+    /// depth frame 의 (cx, cy) 중심 (2*radius+1)² 윈도우에서 0 이 아닌 픽셀들의 median depth(mm).
+    /// 단일 픽셀 읽기는 depth 카메라 노이즈/홀(0) 에 취약해 offset 이 튐 → 영역 median 으로 안정화.
+    /// 유효 픽셀이 하나도 없으면 0 반환.
+    /// </summary>
+    private static double SampleDepthMedian(Mat depthFrame, int cx, int cy, int radius)
+    {
+        int x0 = Math.Max(0, cx - radius);
+        int x1 = Math.Min(depthFrame.Width - 1, cx + radius);
+        int y0 = Math.Max(0, cy - radius);
+        int y1 = Math.Min(depthFrame.Height - 1, cy + radius);
+
+        var vals = new List<ushort>((x1 - x0 + 1) * (y1 - y0 + 1));
+        for (int y = y0; y <= y1; y++)
+        {
+            for (int x = x0; x <= x1; x++)
+            {
+                ushort d = depthFrame.At<ushort>(y, x);
+                if (d > 0) vals.Add(d);   // 0 = 측정 불가(홀) → 제외
+            }
+        }
+
+        if (vals.Count == 0) return 0;
+        vals.Sort();
+        return vals[vals.Count / 2];   // median — 엣지/반사 outlier 에 강건
+    }
+
     private byte[] EncodeToJpeg(Mat frame)
     {
         var prms = new[] { new ImageEncodingParam(ImwriteFlags.JpegQuality, _settings.JpegQuality) };
         Cv2.ImEncode(".jpg", frame, out var buf, prms);
         return buf;
+    }
+
+    /// <summary>
+    /// 최신 depth frame 의 지정 ROI 영역에서 매거진 존재 여부 판정.
+    /// 픽셀의 depth 값이 [minMm, maxMm] 범위에 든 비율이 threshold 이상이면 존재로 판정.
+    /// depth frame 이 없거나 ROI 가 프레임 밖이면 Detected=false 와 Reason 반환.
+    /// </summary>
+    public MagazineDetectionResult DetectMagazineInRoi(
+        int roiX, int roiY, int roiWidth, int roiHeight,
+        ushort depthMinMm, ushort depthMaxMm, double validPixelRatioThreshold)
+    {
+        Mat? snap = null;
+        lock (_latestDepthLock)
+        {
+            // Clone 으로 안전한 사본 확보 후 lock 즉시 해제 (긴 작업 lock 보유 방지)
+            if (_latestDepthMat is { } src && !src.Empty())
+                snap = src.Clone();
+        }
+
+        if (snap is null)
+        {
+            return new MagazineDetectionResult
+            {
+                Reason = "Depth frame 미수신 — 카메라 미연결 또는 OBSENSOR 백엔드 아님"
+            };
+        }
+
+        using (snap)
+        {
+            // ROI 를 프레임 경계로 클램프
+            int x = Math.Clamp(roiX, 0, snap.Width - 1);
+            int y = Math.Clamp(roiY, 0, snap.Height - 1);
+            int w = Math.Clamp(roiWidth, 1, snap.Width - x);
+            int h = Math.Clamp(roiHeight, 1, snap.Height - y);
+
+            if (w <= 0 || h <= 0)
+            {
+                return new MagazineDetectionResult
+                {
+                    Reason = $"ROI 가 프레임 밖 — 프레임 크기 {snap.Width}x{snap.Height}, 요청 ROI ({roiX},{roiY},{roiWidth},{roiHeight})"
+                };
+            }
+
+            using var roiMat = new Mat(snap, new Rect(x, y, w, h));
+
+            int total = w * h;
+            int inRange = 0;
+            long depthSum = 0;
+            int validDepth = 0;   // 0 이 아닌 depth 픽셀 수 (센서 인식된 픽셀)
+
+            for (int yy = 0; yy < h; yy++)
+            {
+                for (int xx = 0; xx < w; xx++)
+                {
+                    ushort d = roiMat.At<ushort>(yy, xx);
+                    if (d == 0) continue;   // 0 = invalid / 측정 불가
+                    validDepth++;
+                    depthSum += d;
+                    if (d >= depthMinMm && d <= depthMaxMm) inRange++;
+                }
+            }
+
+            double ratio = total > 0 ? (double)inRange / total : 0.0;
+            double coverage = total > 0 ? (double)validDepth / total : 0.0;
+            ushort avg = validDepth > 0 ? (ushort)(depthSum / validDepth) : (ushort)0;
+            bool detected = ratio >= validPixelRatioThreshold;
+
+            return new MagazineDetectionResult
+            {
+                Detected = detected,
+                ValidPixelRatio = ratio,
+                InRangePixels = inRange,
+                TotalPixels = total,
+                AverageDepthMm = avg,
+                ValidDepthCoverage = coverage,
+                Reason = detected
+                    ? $"검출됨 (in-range {ratio:P0} ≥ threshold {validPixelRatioThreshold:P0})"
+                    : $"미검출 (in-range {ratio:P0} < threshold {validPixelRatioThreshold:P0})"
+            };
+        }
+    }
+
+    /// <summary>현재 depth frame 의 원본 해상도 (W, H) — 미수신 시 (0, 0)</summary>
+    public (int Width, int Height) GetDepthResolution()
+    {
+        lock (_latestDepthLock)
+        {
+            if (_latestDepthMat is { } mat && !mat.Empty())
+                return (mat.Width, mat.Height);
+        }
+        return (0, 0);
     }
 
     private void ReleaseCapture()
@@ -576,6 +711,13 @@ public class CameraService : BackgroundService
         lock (_depthLock)
         {
             _currentDepthFrame = Array.Empty<byte>();
+        }
+
+        // 매거진 감지용 snapshot 도 정리
+        lock (_latestDepthLock)
+        {
+            _latestDepthMat?.Dispose();
+            _latestDepthMat = null;
         }
     }
 

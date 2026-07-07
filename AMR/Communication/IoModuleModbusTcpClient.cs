@@ -104,14 +104,19 @@ public class IoModuleModbusTcpClient : IDisposable
             IoModuleRegisterMap.DiscreteInput.InputStart,
             IoModuleRegisterMap.DiscreteInput.InputCount, ct);
 
+        // 실제 배선 매핑:
+        //   X002 (bits[2]) → AMR 포트 4
+        //   X003 (bits[3]) → AMR 포트 3
+        //   X004 (bits[4]) → AMR 포트 2
+        //   X005 (bits[5]) → AMR 포트 1
         return new IoModuleInputStatus
         {
             Emo = bits[0],
             Reset = bits[1],
-            MzDetect1 = bits[2],
-            MzDetect2 = bits[3],
-            MzDetect3 = bits[4],
-            MzDetect4 = bits[5]
+            MzDetect1 = bits[5],   // X005 = AMR 포트 1
+            MzDetect2 = bits[4],   // X004 = AMR 포트 2
+            MzDetect3 = bits[3],   // X003 = AMR 포트 3
+            MzDetect4 = bits[2]    // X002 = AMR 포트 4
         };
     }
 

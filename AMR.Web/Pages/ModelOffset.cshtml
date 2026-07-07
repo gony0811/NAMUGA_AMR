@@ -1,0 +1,144 @@
+@page
+@model AMR.Web.Pages.ModelOffsetModel
+@{
+    ViewData["Title"] = "Model Offset";
+}
+
+<div class="container mt-3" style="max-width: 1000px;">
+    <h2>모델별 LOAD/UNLOAD Offset 보정</h2>
+    <hr />
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                ACS 가 보내는 <strong>Model</strong> 값에 따라 LOADING / UNLOADING 작업에
+                공통으로 더해지는 보정값입니다 (노드·포트 무관).
+                <strong>PortOffset 위에 추가로</strong> 더해져서 Fairino 로 전달됩니다.
+                ACS·로봇 프로그램 수정 없이 AMR에서만 적용됩니다.
+            </p>
+
+            <div class="row g-2 align-items-end mb-2">
+                <div class="col-auto">
+                    <label class="form-label form-label-sm mb-0">Model</label>
+                    <input type="text" id="inModel" class="form-control form-control-sm" style="width:140px;" placeholder="모델명" />
+                </div>
+            </div>
+            <div class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <div class="border rounded p-2">
+                        <div class="small fw-bold text-primary mb-1">LOAD</div>
+                        <div class="d-flex gap-1">
+                            <div><label class="form-label form-label-sm mb-0">dx</label><input type="number" id="inLoadDx" class="form-control form-control-sm" style="width:80px;" step="0.1" value="0" /></div>
+                            <div><label class="form-label form-label-sm mb-0">dy</label><input type="number" id="inLoadDy" class="form-control form-control-sm" style="width:80px;" step="0.1" value="0" /></div>
+                            <div><label class="form-label form-label-sm mb-0">drz</label><input type="number" id="inLoadDrz" class="form-control form-control-sm" style="width:80px;" step="0.01" value="0" /></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-auto">
+                    <div class="border rounded p-2">
+                        <div class="small fw-bold text-success mb-1">UNLOAD</div>
+                        <div class="d-flex gap-1">
+                            <div><label class="form-label form-label-sm mb-0">dx</label><input type="number" id="inUnloadDx" class="form-control form-control-sm" style="width:80px;" step="0.1" value="0" /></div>
+                            <div><label class="form-label form-label-sm mb-0">dy</label><input type="number" id="inUnloadDy" class="form-control form-control-sm" style="width:80px;" step="0.1" value="0" /></div>
+                            <div><label class="form-label form-label-sm mb-0">drz</label><input type="number" id="inUnloadDrz" class="form-control form-control-sm" style="width:80px;" step="0.01" value="0" /></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-auto">
+                    <button id="btnSave" class="btn btn-primary btn-sm" onclick="saveOffset()">저장 / 수정</button>
+                </div>
+            </div>
+            <div id="msg" class="small mt-2"></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><strong>등록된 Model Offset</strong></div>
+        <div class="card-body p-0">
+            <table class="table table-sm mb-0 text-center">
+                <thead class="table-light">
+                    <tr>
+                        <th rowspan="2" class="align-middle">Model</th>
+                        <th colspan="3" class="text-primary">LOAD</th>
+                        <th colspan="3" class="text-success">UNLOAD</th>
+                        <th rowspan="2" style="width:120px;"></th>
+                    </tr>
+                    <tr>
+                        <th>dx</th><th>dy</th><th>drz</th>
+                        <th>dx</th><th>dy</th><th>drz</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody">
+                    <tr><td colspan="8" class="text-muted">로딩...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function loadList() {
+        $.getJSON('/ModelOffset?handler=List', function (rows) {
+            var $tb = $('#tbody').empty();
+            if (!rows || rows.length === 0) {
+                $tb.append('<tr><td colspan="8" class="text-muted">등록된 모델 offset 없음</td></tr>');
+                return;
+            }
+            rows.forEach(function (r) {
+                var $tr = $('<tr>');
+                $tr.append('<td><code>' + r.model + '</code></td>');
+                $tr.append('<td>' + r.loadDx.toFixed(1) + '</td>');
+                $tr.append('<td>' + r.loadDy.toFixed(1) + '</td>');
+                $tr.append('<td>' + r.loadDrz.toFixed(2) + '</td>');
+                $tr.append('<td>' + r.unloadDx.toFixed(1) + '</td>');
+                $tr.append('<td>' + r.unloadDy.toFixed(1) + '</td>');
+                $tr.append('<td>' + r.unloadDrz.toFixed(2) + '</td>');
+                var $btns = $('<td>');
+                $('<button class="btn btn-sm btn-outline-secondary me-1">편집</button>')
+                    .on('click', function () {
+                        $('#inModel').val(r.model);
+                        $('#inLoadDx').val(r.loadDx); $('#inLoadDy').val(r.loadDy); $('#inLoadDrz').val(r.loadDrz);
+                        $('#inUnloadDx').val(r.unloadDx); $('#inUnloadDy').val(r.unloadDy); $('#inUnloadDrz').val(r.unloadDrz);
+                    }).appendTo($btns);
+                $('<button class="btn btn-sm btn-outline-danger">삭제</button>')
+                    .on('click', function () { deleteOffset(r.model); }).appendTo($btns);
+                $tr.append($btns);
+                $tb.append($tr);
+            });
+        });
+    }
+
+    function saveOffset() {
+        var payload = {
+            Model: $('#inModel').val(),
+            LoadDx: parseFloat($('#inLoadDx').val()) || 0,
+            LoadDy: parseFloat($('#inLoadDy').val()) || 0,
+            LoadDrz: parseFloat($('#inLoadDrz').val()) || 0,
+            UnloadDx: parseFloat($('#inUnloadDx').val()) || 0,
+            UnloadDy: parseFloat($('#inUnloadDy').val()) || 0,
+            UnloadDrz: parseFloat($('#inUnloadDrz').val()) || 0
+        };
+        $.ajax({
+            url: '/ModelOffset?handler=Upsert', type: 'POST',
+            contentType: 'application/json', data: JSON.stringify(payload),
+            success: function (res) {
+                var $m = $('#msg');
+                if (res.success) { $m.removeClass('text-danger').addClass('text-success').text('✓ 저장됨'); loadList(); }
+                else { $m.removeClass('text-success').addClass('text-danger').text('✗ ' + res.error); }
+            }
+        });
+    }
+
+    function deleteOffset(model) {
+        if (!confirm(model + ' offset을 삭제할까요?')) return;
+        $.ajax({
+            url: '/ModelOffset?handler=Delete', type: 'POST',
+            contentType: 'application/json', data: JSON.stringify({ Model: model }),
+            success: function () { loadList(); }
+        });
+    }
+
+    $(function () { loadList(); });
+</script>
+}

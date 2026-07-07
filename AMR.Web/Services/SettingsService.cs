@@ -11,6 +11,7 @@ public class SettingsService
     private const string ModbusSectionName = "ModbusSettings";
     private const string CobotModbusSectionName = "CobotModbusSettings";
     private const string IoModuleModbusSectionName = "IoModuleModbusSettings";
+    private const string AutoChargeSectionName = "AutoChargeSettings";
 
     public SettingsService(IWebHostEnvironment env)
     {
@@ -85,6 +86,40 @@ public class SettingsService
             Port = section["Port"]?.GetValue<int>() ?? 502,
             SlaveId = (byte)(section["SlaveId"]?.GetValue<int>() ?? 1)
         };
+    }
+
+    /// <summary>
+    /// 자동 충전 설정 로드 — 섹션이 없으면(최초 실행) AutoChargeSettings 의 기본값(N1001, 20초) 반환.
+    /// 사용자가 값을 바꿔 저장한 경우 그 저장값을 그대로 반환한다.
+    /// </summary>
+    public AutoChargeSettings LoadAutoCharge()
+    {
+        var json = File.ReadAllText(_settingsFilePath);
+        var doc = JsonNode.Parse(json);
+        var section = doc?[AutoChargeSectionName];
+
+        if (section is null)
+            return new AutoChargeSettings();
+
+        var defaults = new AutoChargeSettings();
+        return new AutoChargeSettings
+        {
+            Enabled = section["Enabled"]?.GetValue<bool>() ?? defaults.Enabled,
+            IdleTimeoutSeconds = section["IdleTimeoutSeconds"]?.GetValue<int>() ?? defaults.IdleTimeoutSeconds,
+            ChargeNodeId = section["ChargeNodeId"]?.GetValue<string>() ?? defaults.ChargeNodeId
+        };
+    }
+
+    /// <summary>자동 충전 설정 저장 — appsettings.json "AutoChargeSettings" 섹션에 기록</summary>
+    public void SaveAutoCharge(AutoChargeSettings settings)
+    {
+        var json = File.ReadAllText(_settingsFilePath);
+        var doc = JsonNode.Parse(json)!;
+
+        doc[AutoChargeSectionName] = JsonSerializer.SerializeToNode(settings);
+
+        var options = new JsonSerializerOptions { WriteIndented = true };
+        File.WriteAllText(_settingsFilePath, doc.ToJsonString(options));
     }
 
     public void Save(MqttSettings mqttSettings, ModbusSettings modbusSettings,

@@ -64,9 +64,24 @@
                     <strong>Depth Camera</strong>
                 </div>
                 <div class="card-body text-center p-2">
-                    <img id="depthFeed" src="/Camera?handler=DepthStream"
-                         style="max-width: 100%; height: auto; border: 1px solid #ddd; background: #000;"
-                         alt="Depth Camera Feed" />
+                    <div id="depthWrapper"
+                         style="position: relative; display: inline-block; max-width: 100%; cursor: crosshair; user-select: none;">
+                        <img id="depthFeed" src="/Camera?handler=DepthStream"
+                             draggable="false"
+                             style="max-width: 100%; height: auto; border: 1px solid #ddd; background: #000; display: block; -webkit-user-drag: none;"
+                             alt="Depth Camera Feed" />
+                        <!-- 매거진 감지 ROI 오버레이 (저장된 ROI — 빨간 박스) -->
+                        <div id="magRoiOverlay"
+                             style="position: absolute; border: 2px solid #ff3b30; pointer-events: none; display: none;
+                                    box-shadow: 0 0 0 1px rgba(0,0,0,0.4); box-sizing: border-box;"></div>
+                        <!-- 드래그 중 미리보기 박스 (실선/노란색) -->
+                        <div id="magRoiDragPreview"
+                             style="position: absolute; border: 2px dashed #ffd60a; pointer-events: none; display: none;
+                                    background: rgba(255, 214, 10, 0.15); box-sizing: border-box;"></div>
+                    </div>
+                    <div class="small text-muted mt-1">
+                        💡 영상 위에서 <strong>드래그</strong> 해서 ROI 선택 (드래그 완료 후 "저장" 클릭)
+                    </div>
                 </div>
             </div>
         </div>
@@ -172,6 +187,89 @@
                         <span id="teachQrText"></span>
                         <span id="teachTime"></span>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-3">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                    <strong>매거진 감지 (Depth 기반)</strong>
+                    <span id="magBadge" class="badge bg-secondary">미감지</span>
+                </div>
+                <div class="card-body py-2">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-auto">
+                            <label class="form-label form-label-sm mb-0">ROI X</label>
+                            <input type="number" id="magRoiX" class="form-control form-control-sm" style="width:90px;" min="0" />
+                        </div>
+                        <div class="col-auto">
+                            <label class="form-label form-label-sm mb-0">ROI Y</label>
+                            <input type="number" id="magRoiY" class="form-control form-control-sm" style="width:90px;" min="0" />
+                        </div>
+                        <div class="col-auto">
+                            <label class="form-label form-label-sm mb-0">ROI W</label>
+                            <input type="number" id="magRoiW" class="form-control form-control-sm" style="width:90px;" min="1" />
+                        </div>
+                        <div class="col-auto">
+                            <label class="form-label form-label-sm mb-0">ROI H</label>
+                            <input type="number" id="magRoiH" class="form-control form-control-sm" style="width:90px;" min="1" />
+                        </div>
+                        <div class="col-auto">
+                            <label class="form-label form-label-sm mb-0">Depth Min (mm)</label>
+                            <input type="number" id="magDepthMin" class="form-control form-control-sm" style="width:110px;" min="0" max="10000" />
+                        </div>
+                        <div class="col-auto">
+                            <label class="form-label form-label-sm mb-0">Depth Max (mm)</label>
+                            <input type="number" id="magDepthMax" class="form-control form-control-sm" style="width:110px;" min="1" max="10000" />
+                        </div>
+                        <div class="col-auto">
+                            <label class="form-label form-label-sm mb-0">Threshold (0~1)</label>
+                            <input type="number" id="magThresh" class="form-control form-control-sm" style="width:100px;" step="0.05" min="0" max="1" />
+                        </div>
+                        <div class="col-auto">
+                            <button id="btnSaveMagSettings" class="btn btn-sm btn-primary">저장</button>
+                        </div>
+                        <div class="col-auto">
+                            <button id="btnTestMagDetect" class="btn btn-sm btn-outline-info">지금 테스트</button>
+                        </div>
+                    </div>
+
+                    <div class="small text-muted mt-2">
+                        Depth 프레임 해상도: <span id="magDepthRes">-</span> &nbsp;|&nbsp;
+                        ROI 미리보기는 Depth Camera 영상 위에 빨간 박스로 표시됩니다.
+                    </div>
+
+                    <table class="table table-sm table-borderless mt-2 mb-0">
+                        <tbody>
+                            <tr>
+                                <td style="width:160px;"><strong>판정</strong></td>
+                                <td><span id="magDetected" class="badge bg-secondary">-</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>In-range 비율</strong></td>
+                                <td id="magRatio" class="text-muted">-</td>
+                            </tr>
+                            <tr>
+                                <td><strong>유효 depth 비율</strong></td>
+                                <td id="magCoverage" class="text-muted">-</td>
+                            </tr>
+                            <tr>
+                                <td><strong>평균 depth (mm)</strong></td>
+                                <td id="magAvgDepth" class="text-muted">-</td>
+                            </tr>
+                            <tr>
+                                <td><strong>픽셀 수</strong></td>
+                                <td id="magPixels" class="text-muted">-</td>
+                            </tr>
+                            <tr>
+                                <td><strong>사유</strong></td>
+                                <td id="magReason" class="text-muted small">-</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -408,6 +506,208 @@
             });
 
             setInterval(checkTeachingStatus, 500);
+
+            // ─────── 매거진 감지 (depth) ───────
+            var magDepthFrameW = 640;
+            var magDepthFrameH = 480;
+
+            function updateRoiOverlay() {
+                var $img = $('#depthFeed');
+                var $ovl = $('#magRoiOverlay');
+                if (!$img.length || !$img[0].complete || $img[0].naturalWidth === 0 || magDepthFrameW === 0) {
+                    $ovl.hide();
+                    return;
+                }
+                // 표시된 영상 크기 (CSS 픽셀) — naturalWidth 는 송출된 JPEG 원본 크기
+                var dispW = $img[0].clientWidth;
+                var dispH = $img[0].clientHeight;
+                if (dispW === 0 || dispH === 0) { $ovl.hide(); return; }
+
+                // 입력된 ROI 는 depth frame 좌표계(640x480 등). 표시 영상은 같은 비율로 스케일.
+                var scaleX = dispW / magDepthFrameW;
+                var scaleY = dispH / magDepthFrameH;
+
+                var rx = parseInt($('#magRoiX').val()) || 0;
+                var ry = parseInt($('#magRoiY').val()) || 0;
+                var rw = parseInt($('#magRoiW').val()) || 0;
+                var rh = parseInt($('#magRoiH').val()) || 0;
+
+                $ovl.css({
+                    left:   (rx * scaleX) + 'px',
+                    top:    (ry * scaleY) + 'px',
+                    width:  (rw * scaleX) + 'px',
+                    height: (rh * scaleY) + 'px',
+                    display: 'block'
+                });
+            }
+
+            function loadMagSettings() {
+                $.getJSON('/Camera?handler=MagazineSettings', function (s) {
+                    $('#magRoiX').val(s.roiX);
+                    $('#magRoiY').val(s.roiY);
+                    $('#magRoiW').val(s.roiWidth);
+                    $('#magRoiH').val(s.roiHeight);
+                    $('#magDepthMin').val(s.depthMinMm);
+                    $('#magDepthMax').val(s.depthMaxMm);
+                    $('#magThresh').val(s.threshold);
+                    if (s.depthFrameWidth > 0 && s.depthFrameHeight > 0) {
+                        magDepthFrameW = s.depthFrameWidth;
+                        magDepthFrameH = s.depthFrameHeight;
+                    }
+                    $('#magDepthRes').text(magDepthFrameW + ' x ' + magDepthFrameH);
+                    updateRoiOverlay();
+                });
+            }
+
+            $('#btnSaveMagSettings').on('click', function () {
+                var payload = {
+                    roiX:       parseInt($('#magRoiX').val()) || 0,
+                    roiY:       parseInt($('#magRoiY').val()) || 0,
+                    roiWidth:   parseInt($('#magRoiW').val()) || 1,
+                    roiHeight:  parseInt($('#magRoiH').val()) || 1,
+                    depthMinMm: parseInt($('#magDepthMin').val()) || 0,
+                    depthMaxMm: parseInt($('#magDepthMax').val()) || 1,
+                    threshold:  parseFloat($('#magThresh').val()) || 0
+                };
+                var $btn = $(this).prop('disabled', true);
+                $.ajax({
+                    url: '/Camera?handler=UpdateMagazineSettings',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(payload),
+                    success: function (s) {
+                        // 서버가 clamping 한 값으로 다시 표시
+                        $('#magRoiX').val(s.roiX);
+                        $('#magRoiY').val(s.roiY);
+                        $('#magRoiW').val(s.roiWidth);
+                        $('#magRoiH').val(s.roiHeight);
+                        $('#magDepthMin').val(s.depthMinMm);
+                        $('#magDepthMax').val(s.depthMaxMm);
+                        $('#magThresh').val(s.threshold);
+                        updateRoiOverlay();
+                    }
+                }).always(function () { $btn.prop('disabled', false); });
+            });
+
+            $('#btnTestMagDetect').on('click', function () {
+                var $btn = $(this).prop('disabled', true);
+                $.getJSON('/Camera?handler=TestMagazineDetection', function (r) {
+                    $('#magDetected')
+                        .removeClass('bg-secondary bg-success bg-danger')
+                        .addClass(r.detected ? 'bg-success' : 'bg-danger')
+                        .text(r.detected ? '매거진 있음' : '매거진 없음');
+                    $('#magBadge')
+                        .removeClass('bg-secondary bg-success bg-danger')
+                        .addClass(r.detected ? 'bg-success' : 'bg-danger')
+                        .text(r.detected ? '있음' : '없음');
+                    $('#magRatio').text((r.validPixelRatio * 100).toFixed(1) + '% (' + r.inRangePixels + ' / ' + r.totalPixels + ')');
+                    $('#magCoverage').text((r.validDepthCoverage * 100).toFixed(1) + '%');
+                    $('#magAvgDepth').text(r.averageDepthMm + ' mm');
+                    $('#magPixels').text(r.totalPixels + ' px');
+                    $('#magReason').text(r.reason);
+                }).always(function () { $btn.prop('disabled', false); });
+            });
+
+            // ROI 입력값 바뀔 때마다 오버레이 갱신 (저장 안 해도 미리보기)
+            $('#magRoiX, #magRoiY, #magRoiW, #magRoiH').on('input change', updateRoiOverlay);
+
+            // depth 영상 크기 변경(창 리사이즈) 시 오버레이 재계산
+            $(window).on('resize', updateRoiOverlay);
+            $('#depthFeed').on('load', updateRoiOverlay);
+
+            // ───── Depth 영상 드래그로 ROI 선택 ─────
+            var roiDragging = false;
+            var roiDragStart = null;
+
+            function getRelativePoint(evt) {
+                var wrapper = document.getElementById('depthWrapper');
+                if (!wrapper) return null;
+                var rect = wrapper.getBoundingClientRect();
+                var img = document.getElementById('depthFeed');
+                var dispW = img.clientWidth || rect.width;
+                var dispH = img.clientHeight || rect.height;
+                var x = evt.clientX - rect.left;
+                var y = evt.clientY - rect.top;
+                // 영상 영역 밖으로 나가도 영상 경계로 클램프
+                x = Math.max(0, Math.min(x, dispW));
+                y = Math.max(0, Math.min(y, dispH));
+                return { x: x, y: y, dispW: dispW, dispH: dispH };
+            }
+
+            $('#depthWrapper').on('mousedown', function (e) {
+                if (e.which !== 1) return;   // 좌클릭만
+                var p = getRelativePoint(e);
+                if (!p) return;
+                roiDragging = true;
+                roiDragStart = p;
+                // 드래그 시작 시 미리보기 박스 표시 (크기 0 으로 시작)
+                $('#magRoiDragPreview').css({
+                    left: p.x + 'px', top: p.y + 'px',
+                    width: '0px', height: '0px', display: 'block'
+                });
+                e.preventDefault();
+            });
+
+            $(document).on('mousemove.magroi', function (e) {
+                if (!roiDragging || !roiDragStart) return;
+                var p = getRelativePoint(e);
+                if (!p) return;
+                var left = Math.min(roiDragStart.x, p.x);
+                var top  = Math.min(roiDragStart.y, p.y);
+                var w = Math.abs(p.x - roiDragStart.x);
+                var h = Math.abs(p.y - roiDragStart.y);
+                $('#magRoiDragPreview').css({
+                    left: left + 'px', top: top + 'px',
+                    width: w + 'px', height: h + 'px'
+                });
+            });
+
+            $(document).on('mouseup.magroi', function (e) {
+                if (!roiDragging || !roiDragStart) return;
+                roiDragging = false;
+                $('#magRoiDragPreview').hide();
+
+                var p = getRelativePoint(e);
+                if (!p) { roiDragStart = null; return; }
+                var left = Math.min(roiDragStart.x, p.x);
+                var top  = Math.min(roiDragStart.y, p.y);
+                var w = Math.abs(p.x - roiDragStart.x);
+                var h = Math.abs(p.y - roiDragStart.y);
+                roiDragStart = null;
+
+                // 너무 작은 드래그(클릭에 가까움) 무시
+                if (w < 5 || h < 5) {
+                    updateRoiOverlay();
+                    return;
+                }
+
+                // 표시 좌표 → depth frame 좌표 변환
+                var scaleX = magDepthFrameW / p.dispW;
+                var scaleY = magDepthFrameH / p.dispH;
+                var depthX = Math.round(left * scaleX);
+                var depthY = Math.round(top * scaleY);
+                var depthW2 = Math.round(w * scaleX);
+                var depthH2 = Math.round(h * scaleY);
+
+                // 입력 필드 갱신 → 빨간 박스(저장된 ROI) 도 갱신
+                $('#magRoiX').val(depthX);
+                $('#magRoiY').val(depthY);
+                $('#magRoiW').val(depthW2);
+                $('#magRoiH').val(depthH2);
+                updateRoiOverlay();
+            });
+
+            // 마우스가 창 밖으로 나가면 드래그 취소
+            $(document).on('mouseleave.magroi', function () {
+                if (roiDragging) {
+                    roiDragging = false;
+                    roiDragStart = null;
+                    $('#magRoiDragPreview').hide();
+                    updateRoiOverlay();
+                }
+            });
+
+            loadMagSettings();
         });
     </script>
 }

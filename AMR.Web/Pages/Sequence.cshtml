@@ -94,6 +94,44 @@
                 </div>
             </div>
 
+            @* ActionCmd 수동 주입 (설비포트 테스트용) *@
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">ActionCmd 송신 (설비포트 테스트)</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-2">
+                        설비포트(EQP) 시퀀스가 <code>WaitActionCmd</code> 단계에서 멈춰있을 때 트리거.
+                        ActionCmd 의 Port 가 MoveCmd 의 Port 를 <strong>덮어씁니다</strong>.
+                    </p>
+                    <div class="row g-2 mb-2">
+                        <div class="col-5">
+                            <label class="form-label form-label-sm">Port (덮어쓰기)</label>
+                            <select id="actionPort" class="form-select form-select-sm">
+                                <option value="">(없음 — MoveCmd 유지)</option>
+                                <option value="LEFT">LEFT (슬롯1)</option>
+                                <option value="RIGHT">RIGHT (슬롯2)</option>
+                            </select>
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label form-label-sm">AMR Slot</label>
+                            <select id="actionAmrSlot" class="form-select form-select-sm">
+                                <option value="1">Port 1</option>
+                                <option value="2">Port 2</option>
+                                <option value="3">Port 3</option>
+                                <option value="4">Port 4</option>
+                            </select>
+                        </div>
+                        <div class="col-3 d-flex align-items-end">
+                            <button id="btnSendActionCmd" class="btn btn-warning btn-sm w-100" onclick="sendActionCmd()">
+                                <i class="bi bi-send"></i> 송신
+                            </button>
+                        </div>
+                    </div>
+                    <div id="actionCmdResult" class="small text-muted"></div>
+                </div>
+            </div>
+
             @* 현재 상태 정보 *@
             <div class="card mb-3">
                 <div class="card-header">
@@ -518,6 +556,38 @@
     function clearLogs() {
         lastLogCount = 0;
         $('#logBody').html('<tr><td colspan="3" class="text-muted text-center">로그 없음</td></tr>');
+    }
+
+    function sendActionCmd() {
+        var payload = {
+            Port: $('#actionPort').val(),
+            AmrSlot: parseInt($('#actionAmrSlot').val(), 10)
+        };
+        var $btn = $('#btnSendActionCmd').prop('disabled', true);
+        var $result = $('#actionCmdResult');
+        $result.removeClass('text-success text-danger').addClass('text-muted').text('송신 중...');
+
+        $.ajax({
+            url: '/Sequence?handler=SendActionCmd',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(payload),
+            success: function (res) {
+                if (res.success) {
+                    var portTxt = res.port || '(없음)';
+                    $result.removeClass('text-muted text-danger').addClass('text-success')
+                        .text('✓ 송신됨 — CmdId=' + res.cmdId + ', Port=' + portTxt + ', AmrSlot=' + res.amrSlot);
+                } else {
+                    $result.removeClass('text-muted text-success').addClass('text-danger')
+                        .text('✗ 송신 실패: ' + res.error);
+                }
+            },
+            error: function (xhr, status, err) {
+                $result.removeClass('text-muted text-success').addClass('text-danger')
+                    .text('✗ 요청 실패: ' + (err || status));
+            },
+            complete: function () { $btn.prop('disabled', false); }
+        });
     }
 
     $(function () {

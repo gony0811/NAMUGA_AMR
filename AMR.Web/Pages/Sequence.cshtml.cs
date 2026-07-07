@@ -11,16 +11,52 @@ namespace AMR.Web.Pages;
 public class SequenceModel : PageModel
 {
     private readonly MoveSequenceRunner _runner;
+    private readonly MqttService _mqttService;
 
-    public SequenceModel(MoveSequenceRunner runner)
+    public SequenceModel(MoveSequenceRunner runner, MqttService mqttService)
     {
         _runner = runner;
+        _mqttService = mqttService;
     }
 
     public SequenceState CurrentState => _runner.State;
 
     public void OnGet()
     {
+    }
+
+    /// <summary>테스트용 — Web UI 에서 ActionCmd 수동 주입 요청 본문</summary>
+    public class SendActionCmdRequest
+    {
+        public string? Port { get; set; }
+        public int AmrSlot { get; set; } = 1;
+        public string? CmdId { get; set; }   // 비어있으면 자동 생성
+    }
+
+    /// <summary>
+    /// 설비포트 시퀀스의 WaitActionCmd 단계 트리거 — ActionCmd 를 MQTT 큐에 수동 주입.
+    /// ACS 없이 테스트할 때 사용.
+    /// </summary>
+    public IActionResult OnPostSendActionCmd([FromBody] SendActionCmdRequest req)
+    {
+        try
+        {
+            var cmd = new AmrCommand
+            {
+                CmdId = string.IsNullOrWhiteSpace(req.CmdId)
+                    ? $"web_action_{DateTime.Now:yyyyMMdd_HHmmss_fff}"
+                    : req.CmdId,
+                Command = "actionCmd",
+                Port = string.IsNullOrWhiteSpace(req.Port) ? null : req.Port,
+                AmrSlot = req.AmrSlot
+            };
+            _mqttService.InjectActionCmdForTest(cmd);
+            return new JsonResult(new { success = true, cmdId = cmd.CmdId, port = cmd.Port, amrSlot = cmd.AmrSlot });
+        }
+        catch (Exception ex)
+        {
+            return new JsonResult(new { success = false, error = ex.Message });
+        }
     }
 
     /// <summary>시퀀스 상태 폴링 (AJAX)</summary>

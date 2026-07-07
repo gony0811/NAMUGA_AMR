@@ -23,6 +23,7 @@ public class IoModuleService : BackgroundService
     private readonly IoModuleModbusTcpClient _modbusClient;
     private readonly CobotService _cobotService;
     private readonly MoveSequenceRunner _sequenceRunner;
+    private readonly AmrService _amrService;
     private readonly ILogger<IoModuleService> _logger;
 
     private IoModuleInputStatus? _currentInputs;
@@ -44,12 +45,15 @@ public class IoModuleService : BackgroundService
     private const int PollIntervalMs = 500;
     private const int InputPollIntervalMs = 200;       // 메인 입력 폴링 주기 (짧은 펄스 캐치)
     private const int LongPressDurationMs = 5000;       // 5초 이상 누르면 ClearFaults + Stop + Manual 강제 전환
+    private const ushort ResetAmrTaskIndex = 50;        // 리셋(짧게 누름) 복구 시퀀스 마지막에 AMR 으로 보내는 TaskIndex
+    private const ushort ResetAmrJobIndex = 1;          // 위 TaskIndex 와 함께 보내는 JobIndex
 
-    public IoModuleService(IoModuleModbusTcpClient modbusClient, CobotService cobotService, MoveSequenceRunner sequenceRunner, ILogger<IoModuleService> logger)
+    public IoModuleService(IoModuleModbusTcpClient modbusClient, CobotService cobotService, MoveSequenceRunner sequenceRunner, AmrService amrService, ILogger<IoModuleService> logger)
     {
         _modbusClient = modbusClient;
         _cobotService = cobotService;
         _sequenceRunner = sequenceRunner;
+        _amrService = amrService;
         _logger = logger;
     }
 
@@ -61,6 +65,19 @@ public class IoModuleService : BackgroundService
 
     /// <summary>현재 활성화된 비정상 상황 (없으면 null)</summary>
     public AbnormalInfo? CurrentAbnormal { get; private set; }
+
+    /// <summary>
+    /// 다른 서비스(MoveSequenceRunner 등) 에서 abnormal 을 보고할 수 있는 진입점.
+    /// 설정된 값은 다음 MainSequenceService 상태 publish 사이클에 ACS 로 전송된다.
+    /// </summary>
+    public void SetAbnormal(AbnormalInfo info)
+    {
+        CurrentAbnormal = info;
+        _logger.LogWarning("Abnormal 보고: Type={Type}, Node={Node}", info.Type, info.Node);
+    }
+
+    /// <summary>외부에서 abnormal 을 명시적으로 해제</summary>
+    public void ClearAbnormal() => CurrentAbnormal = null;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -370,7 +387,25 @@ public class IoModuleService : BackgroundService
                 _logger.LogWarning(ex, "[Manual전환] Manual 전환 실패");
             }
 
-            _logger.LogInformation("[Manual전환] 5초 롱프레스 시퀀스 완료 (ClearFaults + Stop + Manual)");
+            // 4. ACS 로 OPERATOR_ABORT abnormal 보고 — ACS 가 현재 진행 중인 job 을 삭제하도록.
+            //    SetAbnormal 은 CurrentAbnormal 을 설정하고, MainSequenceService 가 다음 status
+            //    publish(1초 주기)에 포함시켜 전송한다. 새 job 이 들어오면 RunSequenceAsync 에서 해제.
+            try
+            {
+                _logger.LogInformation("[Manual전환] ACS 로 OPERATOR_ABORT abnormal 보고 (현재 job 삭제 요청)");
+                SetAbnormal(new AbnormalInfo
+                {
+                    Type = "OPERATOR_ABORT",
+                    Node = "AMR",
+                    Timestamp = DateTime.UtcNow.ToString("o")
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[Manual전환] OPERATOR_ABORT abnormal 보고 실패");
+            }
+
+            _logger.LogInformation("[Manual전환] 5초 롱프레스 시퀀스 완료 (ClearFaults + Stop + Manual + OPERATOR_ABORT)");
         }
         catch (OperationCanceledException)
         {
@@ -386,7 +421,7 @@ public class IoModuleService : BackgroundService
     /// 리셋 스위치 짧게 누름 시 실행되는 코봇 복구 시퀀스.
     /// 각 단계는 best-effort — 개별 실패가 후속 단계를 막지 않는다.
     /// 5·6 단계는 EnsureAutoAndRunningAsync 한 번으로 묶어서 토글 오작동을 방지.
-    /// 순서: 부저OFF → Recovery → ClearAllFaults → Servo ON → Auto+Main → Phome(DI25)
+    /// 순서: 부저OFF → Recovery → ClearAllFaults → Servo ON → Auto+Main → Phome(DI25) → AMR TASK 50
     /// </summary>
     private async Task HandleResetSwitchAsync(CancellationToken ct)
     {
@@ -421,6 +456,14 @@ public class IoModuleService : BackgroundService
         // 5·6. Auto 모드 + Main Program 보장 (현재 상태 확인 후 필요할 때만 토글/시작)
         await TryStepAsync("Auto 모드 + Main Program 보장", () => _cobotService.EnsureAutoAndRunningAsync(ct), ct);
 
+        // 5초 롱프레스로 설정된 OPERATOR_ABORT abnormal 해제 — 운전자가 reset 으로 코봇을
+        // Auto 로 복귀시켰다는 것은 운전자 개입 상황이 정리됐다는 의미. (이미 ACS 로 전송 완료된 뒤)
+        if (CurrentAbnormal?.Type == "OPERATOR_ABORT")
+        {
+            _logger.LogInformation("[리셋] 코봇 Auto 복귀 — OPERATOR_ABORT abnormal 해제");
+            ClearAbnormal();
+        }
+
         // 7. 코봇 홈(Phome) 위치 이동 (DI25 핸드셰이크) — 앞 단계가 모두 성공해야 의미 있음
         var phomeOk = false;
         try
@@ -449,6 +492,15 @@ public class IoModuleService : BackgroundService
         {
             _logger.LogWarning("[리셋] Phome 이동 실패 — 경광등은 알람 색 유지");
         }
+
+        // 9. AMR 에 TASK 50 수행 명령 — TaskIndex/JobIndex 설정 후 Start.
+        //    (코봇 복구와 무관하게 best-effort 로 전송)
+        await TryStepAsync($"AMR TASK {ResetAmrTaskIndex}/Job {ResetAmrJobIndex} 수행", async () =>
+        {
+            await _amrService.SetTaskIndexAsync(ResetAmrTaskIndex, ct);
+            await _amrService.SetJobIndexAsync(ResetAmrJobIndex, ct);
+            await _amrService.SetExecutionControlAsync(ExecutionControl.Start, ct);
+        }, ct);
     }
 
     /// <summary>리셋 시퀀스의 한 단계를 실행하고 실패해도 다음 단계로 진행</summary>

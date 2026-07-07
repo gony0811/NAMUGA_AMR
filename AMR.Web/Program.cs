@@ -109,9 +109,17 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<SignalTowerService
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CameraService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MovementSoundService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<IdleChargeService>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<MemoryMaintenanceService>());
 
-// SQ   Lite 데이터베이스 설정
-var connectionString = "Data Source=amr.db";
+// SQLite 데이터베이스 설정 — exe(또는 dll) 옆 고정 경로 사용.
+// 상대 경로(`Data Source=amr.db`)면 작업 디렉터리에 따라 다른 db 가 생성됨:
+//   Rider 실행          → AMR.Web/amr.db
+//   bin 의 exe 직접 실행 → AMR.Web/bin/Debug/net8.0/amr.db
+//   자동시작 스크립트    → 레포 루트/amr.db
+// AppContext.BaseDirectory 는 어떻게 실행하든 항상 같은 위치(=exe/dll 폴더) 라서
+// 모든 실행 경로에서 동일한 db 를 가리키게 된다.
+var dbPath = Path.Combine(AppContext.BaseDirectory, "amr.db");
+var connectionString = $"Data Source={dbPath}";
 builder.Services.AddDbContext<AmrDbContext>(options =>
     options.UseSqlite(connectionString));
 builder.Services.AddDbContextFactory<AmrDbContext>(options =>
@@ -127,6 +135,16 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AmrDbContext>();
     db.Database.Migrate();
+}
+
+// 자동 충전 설정 적용 — 저장값이 있으면 그 값으로, 없으면 기본값(N1001, 20초)으로 시작.
+// 사용자가 /AutoCharge 에서 바꾼 값은 appsettings.json 에 저장되어 재시작 후에도 이어진다.
+{
+    var autoCharge = app.Services.GetRequiredService<SettingsService>().LoadAutoCharge();
+    var idleCharge = app.Services.GetRequiredService<IdleChargeService>();
+    idleCharge.Enabled = autoCharge.Enabled;
+    idleCharge.IdleTimeoutSeconds = autoCharge.IdleTimeoutSeconds;
+    idleCharge.ChargeNodeId = autoCharge.ChargeNodeId;
 }
 
 // Configure the HTTP request pipeline.

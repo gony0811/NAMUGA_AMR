@@ -22,4 +22,9 @@
       <PackageReference Include="ZXing.Net.Bindings.SkiaSharp" Version="0.16.22" />
     </ItemGroup>
 
+    <!-- 이동 사운드 WAV 파일 — 빌드/Publish 시 출력 폴더의 sounds\ 로 복사 -->
+    <ItemGroup>
+      <None Include="sounds\**\*.wav" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
 </Project>

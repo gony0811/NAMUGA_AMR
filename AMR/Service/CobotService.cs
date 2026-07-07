@@ -117,6 +117,36 @@ public class CobotService : BackgroundService
     public Task<CobotStatus> ReadStatusAsync(CancellationToken ct = default)
         => _modbusClient.ReadCobotStatusAsync(ct);
 
+    /// <summary>
+    /// Cobot 이 Manual 모드(또는 미연결/읽기 실패)인지 판정 — 이동/작업 명령 차단용 공통 게이트.
+    /// RobotMode: 0=Auto, 그 외=Manual. 미연결/읽기 실패 시 true(=차단) 로 안전 처리.
+    /// 자동 충전·ACS moveCmd 등 모든 자동 이동의 사전 게이트로 사용.
+    /// </summary>
+    public async Task<bool> IsManualOrUnavailableAsync(CancellationToken ct = default)
+    {
+        if (!IsConnected)
+        {
+            _logger.LogInformation("Cobot 미연결 — 이동 명령 차단");
+            return true;
+        }
+
+        try
+        {
+            var status = await ReadStatusAsync(ct);
+            var isManual = status.RobotMode != 0;
+            if (isManual)
+                _logger.LogInformation(
+                    "Cobot Manual 모드 감지 — 이동 명령 차단 (RobotMode={Mode}, Enable={Enable}, Op={Op})",
+                    status.RobotMode, status.EnableState, status.OperationStatus);
+            return isManual;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInformation(ex, "Cobot 상태 읽기 실패 — 이동 명령 차단");
+            return true;
+        }
+    }
+
     #endregion
 
     #region 제어 명령 (Coil)

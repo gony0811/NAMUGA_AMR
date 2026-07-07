@@ -1,4 +1,6 @@
 using AMR.Service;
+using AMR.Web.Models;
+using AMR.Web.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
@@ -8,10 +10,12 @@ namespace AMR.Web.Pages;
 public class AutoChargeModel : PageModel
 {
     private readonly IdleChargeService _service;
+    private readonly SettingsService _settingsService;
 
-    public AutoChargeModel(IdleChargeService service)
+    public AutoChargeModel(IdleChargeService service, SettingsService settingsService)
     {
         _service = service;
+        _settingsService = settingsService;
     }
 
     public void OnGet() { }
@@ -41,6 +45,14 @@ public class AutoChargeModel : PageModel
             _service.IdleTimeoutSeconds = sec;
         }
         if (req.ChargeNodeId is not null) _service.ChargeNodeId = req.ChargeNodeId.Trim();
+
+        // 변경값을 appsettings.json 에 영속화 — 재시작 후에도 그대로 이어진다.
+        _settingsService.SaveAutoCharge(new AutoChargeSettings
+        {
+            Enabled = _service.Enabled,
+            IdleTimeoutSeconds = _service.IdleTimeoutSeconds,
+            ChargeNodeId = _service.ChargeNodeId
+        });
 
         return new JsonResult(new
         {

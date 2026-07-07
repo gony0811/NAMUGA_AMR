@@ -28,7 +28,8 @@ public class SoundModel : PageModel
             isPlaying = _soundService.Enabled && _soundService.LastRobotState?.ToString() == "Started",
             intervalMs = _soundService.IntervalMs,
             noteDurationMs = _soundService.NoteDurationMs,
-            frequencies = _soundService.MelodyFrequencies
+            frequencies = _soundService.MelodyFrequencies,
+            usingWavFile = _soundService.UsingWavFile
         });
     }
 

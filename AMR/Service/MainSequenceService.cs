@@ -17,6 +17,7 @@ public class MainSequenceService : BackgroundService
     private readonly MoveSequenceRunner _sequenceRunner;
     private readonly AlarmService _alarmService;
     private readonly IoModuleService _ioModuleService;
+    private readonly CobotService _cobotService;
     private readonly IDbContextFactory<AmrDbContext> _dbFactory;
     private readonly ILogger<MainSequenceService> _logger;
 
@@ -26,6 +27,7 @@ public class MainSequenceService : BackgroundService
         MoveSequenceRunner sequenceRunner,
         AlarmService alarmService,
         IoModuleService ioModuleService,
+        CobotService cobotService,
         IDbContextFactory<AmrDbContext> dbFactory,
         ILogger<MainSequenceService> logger)
     {
@@ -34,6 +36,7 @@ public class MainSequenceService : BackgroundService
         _sequenceRunner = sequenceRunner;
         _alarmService = alarmService;
         _ioModuleService = ioModuleService;
+        _cobotService = cobotService;
         _dbFactory = dbFactory;
         _logger = logger;
     }
@@ -48,6 +51,10 @@ public class MainSequenceService : BackgroundService
 
         AmrStatusMessage? previousStatus = null;
 
+        // 충전량·pose 주기 로그 (메인 루프는 1초마다 돌지만 30초 간격으로만 기록)
+        var lastStatusLog = DateTime.MinValue;
+        var statusLogInterval = TimeSpan.FromSeconds(30);
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -56,6 +63,21 @@ public class MainSequenceService : BackgroundService
                 if (_amrService.IsConnected && _mqttService.IsConnected)
                 {
                     var robotStatus = await _amrService.ReadStatusAsync(stoppingToken);
+
+                    // 충전량·pose 주기 로그 (30초 간격)
+                    var now = DateTime.UtcNow;
+                    if (now - lastStatusLog >= statusLogInterval)
+                    {
+                        var battery = robotStatus.Battery;
+                        var pose = robotStatus.Pose;
+                        _logger.LogInformation(
+                            "AMR 상태 — 충전량 {Level:F1}% (전압 {Voltage:F1}V, 전류 {Current:F2}A, {Charging}), " +
+                            "Pose X={X:F2} Y={Y:F2} Angle={Angle:F1}°",
+                            battery.LevelPercent, battery.Voltage, battery.Current, battery.ChargingState,
+                            pose.X, pose.Y, pose.Angle);
+                        lastStatusLog = now;
+                    }
+
                     var alarm = await _alarmService.EvaluateAsync(stoppingToken);
 
                     if (alarm != null && _sequenceRunner.State.IsRunning)
@@ -147,7 +169,16 @@ public class MainSequenceService : BackgroundService
             return;
         }
 
-        // 4. 시퀀스 실행 (Fire-and-forget: 시퀀스는 백그라운드에서 진행)
+        // 4. Cobot Manual 모드(또는 미연결) 확인 — 작업자가 수동 조작 중이면 모든 이동 명령 거부
+        if (await _cobotService.IsManualOrUnavailableAsync(ct))
+        {
+            _logger.LogWarning("Cobot Manual/미연결 상태에서 moveCmd 거부: NodeId={NodeId}", command.NodeId);
+            await ReplyAsync(command.CmdId, "REJECTED", 12,
+                "Cobot이 Manual 모드이거나 연결되지 않아 이동 명령을 수행할 수 없습니다.", ct);
+            return;
+        }
+
+        // 5. 시퀀스 실행 (Fire-and-forget: 시퀀스는 백그라운드에서 진행)
         _logger.LogInformation("Move 시퀀스 시작: NodeId={NodeId}, Port={Port}, JobType={JobType}",
             command.NodeId, command.Port, command.JobType);
         _ = _sequenceRunner.RunSequenceAsync(command, ct);

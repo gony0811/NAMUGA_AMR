@@ -1,5 +1,13 @@
 # Register AMR auto-start in Task Scheduler.
 # Run this script ONCE in an elevated PowerShell.
+#
+# Trigger:   At system startup (no user logon required)
+# Identity:  Current user, S4U logon type (no password stored, no interactive desktop)
+# Use case:  AMR.Web is a self-hosted ASP.NET Core console app — no UI dependency,
+#            so it runs fine in a non-interactive session.
+#
+# Prerequisite: RabbitMQ must be installed as a native Windows service
+#               (Docker Desktop dependency removed). See README.md.
 
 #Requires -Version 5.1
 #Requires -RunAsAdministrator
@@ -26,15 +34,17 @@ $action = New-ScheduledTaskAction `
     -Execute "powershell.exe" `
     -Argument "-ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -File `"$ScriptPath`""
 
-# Trigger: at logon (1-minute delay to let the system settle)
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-$trigger.Delay = "PT1M"
+# Trigger: at PC startup (30s delay so network/disk subsystems settle)
+$trigger = New-ScheduledTaskTrigger -AtStartup
+$trigger.Delay = "PT30S"
 
-# Principal: current user, highest privileges
+# Principal: current user, S4U (no password stored, non-interactive — runs without logon)
+# Requires "Log on as a batch job" right; running as Administrator at install time
+# is enough because the current user typically already has this right.
 $principal = New-ScheduledTaskPrincipal `
     -UserId $env:USERNAME `
     -RunLevel Highest `
-    -LogonType Interactive
+    -LogonType S4U
 
 # Settings
 $settings = New-ScheduledTaskSettingsSet `
@@ -51,18 +61,24 @@ Register-ScheduledTask `
     -Trigger $trigger `
     -Principal $principal `
     -Settings $settings `
-    -Description "Auto-start Docker Desktop, docker compose, and AMR.Web on user logon"
+    -Description "Auto-start AMR.Web at PC boot (no logon required). RabbitMQ runs as native Windows service."
 
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Green
 Write-Host "  Task Scheduler registered: $TaskName" -ForegroundColor Green
 Write-Host "============================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "Will auto-start from next logon."
+Write-Host "Trigger : At system startup (no logon required)"
+Write-Host "Identity: $env:USERNAME (S4U, non-interactive)"
+Write-Host ""
+Write-Host "Will auto-start at next PC boot — even with nobody logged in."
 Write-Host "To test immediately:"
 Write-Host "    Start-ScheduledTask -TaskName `"$TaskName`""
 Write-Host ""
 Write-Host "Log: $RepoRoot\Logs\autostart\start-amr.log"
 Write-Host ""
-Write-Host "NOTE - For auto-start at PC boot, enable Windows auto-login:"
-Write-Host "    netplwiz  ->  uncheck 'Users must enter a user name and password'"
+Write-Host "REMINDER:"
+Write-Host "  Make sure RabbitMQ Windows service is installed and running:"
+Write-Host "    Get-Service RabbitMQ"
+Write-Host "  And MQTT plugin is enabled:"
+Write-Host "    rabbitmq-plugins list | findstr mqtt"

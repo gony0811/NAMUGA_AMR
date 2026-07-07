@@ -1,0 +1,136 @@
+@page
+@model AMR.Web.Pages.PortOffsetModel
+@{
+    ViewData["Title"] = "Port Offset";
+}
+
+<div class="container mt-3" style="max-width: 900px;">
+    <h2>노드별 QR Offset 보정</h2>
+    <hr />
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                설비/자재 포트가 같은 티칭포지션을 공유할 때, QR 읽기 지점과 작업 지점의 기하 차이로
+                노드/슬롯마다 생기는 일정한 보정 오차를 흡수합니다.
+                여기 입력한 값이 QR offset(dx, dy, drz)에 <strong>더해져서</strong> Fairino 로 전달됩니다.
+                <strong>ACS·로봇 프로그램 수정 없이</strong> AMR에서만 적용됩니다.
+            </p>
+
+            <div class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label form-label-sm mb-0">NodeId</label>
+                    <input type="text" id="inNodeId" class="form-control form-control-sm" style="width:120px;" placeholder="N2001" />
+                </div>
+                <div class="col-auto">
+                    <label class="form-label form-label-sm mb-0">Port(슬롯)</label>
+                    <select id="inPort" class="form-select form-select-sm" style="width:130px;">
+                        <option value="">(공통)</option>
+                        <option value="LEFT">LEFT (슬롯1)</option>
+                        <option value="RIGHT">RIGHT (슬롯2)</option>
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <label class="form-label form-label-sm mb-0">dx (mm)</label>
+                    <input type="number" id="inDx" class="form-control form-control-sm" style="width:90px;" step="0.1" value="0" />
+                </div>
+                <div class="col-auto">
+                    <label class="form-label form-label-sm mb-0">dy (mm)</label>
+                    <input type="number" id="inDy" class="form-control form-control-sm" style="width:90px;" step="0.1" value="0" />
+                </div>
+                <div class="col-auto">
+                    <label class="form-label form-label-sm mb-0">drz (°)</label>
+                    <input type="number" id="inDrz" class="form-control form-control-sm" style="width:90px;" step="0.01" value="0" />
+                </div>
+                <div class="col-auto">
+                    <button id="btnSave" class="btn btn-primary btn-sm" onclick="saveOffset()">저장 / 수정</button>
+                </div>
+            </div>
+            <div id="msg" class="small mt-2"></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><strong>등록된 Offset</strong></div>
+        <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>NodeId</th><th>Port</th>
+                        <th class="text-end">dx (mm)</th><th class="text-end">dy (mm)</th><th class="text-end">drz (°)</th>
+                        <th style="width:120px;"></th>
+                    </tr>
+                </thead>
+                <tbody id="tbody">
+                    <tr><td colspan="6" class="text-muted text-center">로딩...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function loadList() {
+        $.getJSON('/PortOffset?handler=List', function (rows) {
+            var $tb = $('#tbody').empty();
+            if (!rows || rows.length === 0) {
+                $tb.append('<tr><td colspan="6" class="text-muted text-center">등록된 offset 없음</td></tr>');
+                return;
+            }
+            rows.forEach(function (r) {
+                var portTxt = r.port || '(공통)';
+                var $tr = $('<tr>');
+                $tr.append('<td><code>' + r.nodeId + '</code></td>');
+                $tr.append('<td>' + portTxt + '</td>');
+                $tr.append('<td class="text-end">' + r.offsetDx.toFixed(1) + '</td>');
+                $tr.append('<td class="text-end">' + r.offsetDy.toFixed(1) + '</td>');
+                $tr.append('<td class="text-end">' + r.offsetDrz.toFixed(2) + '</td>');
+                var $btns = $('<td>');
+                $('<button class="btn btn-sm btn-outline-secondary me-1">편집</button>')
+                    .on('click', function () {
+                        $('#inNodeId').val(r.nodeId);
+                        $('#inPort').val(r.port);
+                        $('#inDx').val(r.offsetDx);
+                        $('#inDy').val(r.offsetDy);
+                        $('#inDrz').val(r.offsetDrz);
+                    }).appendTo($btns);
+                $('<button class="btn btn-sm btn-outline-danger">삭제</button>')
+                    .on('click', function () { deleteOffset(r.nodeId, r.port); }).appendTo($btns);
+                $tr.append($btns);
+                $tb.append($tr);
+            });
+        });
+    }
+
+    function saveOffset() {
+        var payload = {
+            NodeId: $('#inNodeId').val(),
+            Port: $('#inPort').val(),
+            OffsetDx: parseFloat($('#inDx').val()) || 0,
+            OffsetDy: parseFloat($('#inDy').val()) || 0,
+            OffsetDrz: parseFloat($('#inDrz').val()) || 0
+        };
+        $.ajax({
+            url: '/PortOffset?handler=Upsert', type: 'POST',
+            contentType: 'application/json', data: JSON.stringify(payload),
+            success: function (res) {
+                var $m = $('#msg');
+                if (res.success) { $m.removeClass('text-danger').addClass('text-success').text('✓ 저장됨'); loadList(); }
+                else { $m.removeClass('text-success').addClass('text-danger').text('✗ ' + res.error); }
+            }
+        });
+    }
+
+    function deleteOffset(nodeId, port) {
+        if (!confirm(nodeId + ' / ' + (port || '(공통)') + ' offset을 삭제할까요?')) return;
+        $.ajax({
+            url: '/PortOffset?handler=Delete', type: 'POST',
+            contentType: 'application/json', data: JSON.stringify({ NodeId: nodeId, Port: port }),
+            success: function () { loadList(); }
+        });
+    }
+
+    $(function () { loadList(); });
+</script>
+}

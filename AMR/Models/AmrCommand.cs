@@ -25,4 +25,7 @@ public class AmrCommand
 
     /// <summary>AMR 슬롯 번호 (1~4)</summary>
     public int AmrSlot { get; set; } = 1;
+
+    /// <summary>모델 정보 (ACS 전달) — 모델별 LOAD/UNLOAD offset 보정에 사용</summary>
+    public string? Model { get; set; }
 }

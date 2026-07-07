@@ -11,15 +11,15 @@ public class IoModuleInputStatus
     /// <summary>X001 — RESET 스위치</summary>
     public bool Reset { get; set; }
 
-    /// <summary>X002 — MZ DETECT 1</summary>
+    /// <summary>AMR 포트 1 매거진 감지 — 실제 배선: X005</summary>
     public bool MzDetect1 { get; set; }
 
-    /// <summary>X003 — MZ DETECT 2</summary>
+    /// <summary>AMR 포트 2 매거진 감지 — 실제 배선: X004</summary>
     public bool MzDetect2 { get; set; }
 
-    /// <summary>X004 — MZ DETECT 3</summary>
+    /// <summary>AMR 포트 3 매거진 감지 — 실제 배선: X003</summary>
     public bool MzDetect3 { get; set; }
 
-    /// <summary>X005 — MZ DETECT 4</summary>
+    /// <summary>AMR 포트 4 매거진 감지 — 실제 배선: X002</summary>
     public bool MzDetect4 { get; set; }
 }

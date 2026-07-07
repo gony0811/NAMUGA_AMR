@@ -18,16 +18,17 @@ namespace AMR.Service;
 public class IdleChargeService : BackgroundService
 {
     private readonly MoveSequenceRunner _runner;
+    private readonly CobotService _cobotService;
     private readonly ILogger<IdleChargeService> _logger;
 
     /// <summary>자동 충전 기능 활성화</summary>
-    public bool Enabled { get; set; } = false;
+    public bool Enabled { get; set; } = true;
 
     /// <summary>Idle 판정 시간(초) — 시퀀스 끝나고 이 시간 동안 명령 없으면 자동 충전</summary>
-    public int IdleTimeoutSeconds { get; set; } = 30;
+    public int IdleTimeoutSeconds { get; set; } = 20;
 
     /// <summary>충전 목적지 NodeId — 비어있으면 트리거 안 함</summary>
-    public string ChargeNodeId { get; set; } = string.Empty;
+    public string ChargeNodeId { get; set; } = "N1001";
 
     /// <summary>마지막으로 활동(시퀀스 실행 / 마지막 완료)이 있었던 시점</summary>
     public DateTime LastActivityAt { get; private set; } = DateTime.Now;
@@ -41,9 +42,10 @@ public class IdleChargeService : BackgroundService
     private bool _previousIsRunning;
     private const int PollIntervalMs = 5000;
 
-    public IdleChargeService(MoveSequenceRunner runner, ILogger<IdleChargeService> logger)
+    public IdleChargeService(MoveSequenceRunner runner, CobotService cobotService, ILogger<IdleChargeService> logger)
     {
         _runner = runner;
+        _cobotService = cobotService;
         _logger = logger;
     }
 
@@ -56,7 +58,7 @@ public class IdleChargeService : BackgroundService
         {
             try
             {
-                EvaluateOnce(stoppingToken);
+                await EvaluateOnceAsync(stoppingToken);
             }
             catch (Exception ex)
             {
@@ -67,7 +69,7 @@ public class IdleChargeService : BackgroundService
         }
     }
 
-    private void EvaluateOnce(CancellationToken stoppingToken)
+    private async Task EvaluateOnceAsync(CancellationToken stoppingToken)
     {
         var state = _runner.State;
 
@@ -98,6 +100,13 @@ public class IdleChargeService : BackgroundService
         if (string.Equals(state.CurrentNodeId, ChargeNodeId, StringComparison.OrdinalIgnoreCase)) return;
 
         if (IdleSeconds < IdleTimeoutSeconds) return;
+
+        // ★ Cobot 이 Manual(또는 미연결)이면 자동 충전 트리거 안 함 — 공통 게이트 사용
+        if (await _cobotService.IsManualOrUnavailableAsync(stoppingToken))
+        {
+            _logger.LogInformation("Cobot Manual/미연결 — 자동 충전 트리거 보류");
+            return;
+        }
 
         // 트리거
         TriggerChargeSequence(stoppingToken);
