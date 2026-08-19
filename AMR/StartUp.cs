@@ -47,6 +47,10 @@ public class AmrModule : Module
             .AsSelf()
             .SingleInstance();
 
+        builder.RegisterType<SequenceSimulator>()
+            .AsSelf()
+            .SingleInstance();
+
         builder.RegisterType<MoveSequenceRunner>()
             .AsSelf()
             .SingleInstance();

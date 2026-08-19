@@ -458,9 +458,9 @@ public class IoModuleService : BackgroundService
 
         // 5초 롱프레스로 설정된 OPERATOR_ABORT abnormal 해제 — 운전자가 reset 으로 코봇을
         // Auto 로 복귀시켰다는 것은 운전자 개입 상황이 정리됐다는 의미. (이미 ACS 로 전송 완료된 뒤)
-        if (CurrentAbnormal?.Type == "OPERATOR_ABORT")
+        if (CurrentAbnormal?.Type is "OPERATOR_ABORT" or "EXCHANGE_CANCEL_HOLD")
         {
-            _logger.LogInformation("[리셋] 코봇 Auto 복귀 — OPERATOR_ABORT abnormal 해제");
+            _logger.LogInformation("[리셋] 코봇 Auto 복귀 — {Type} abnormal 해제", CurrentAbnormal?.Type);
             ClearAbnormal();
         }
 
