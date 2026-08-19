@@ -119,6 +119,9 @@ public class SettingsModel : PageModel
                 existing.LocationTag = mapping.LocationTag;
                 existing.TaskIndex = mapping.TaskIndex;
                 existing.JobIndex = mapping.JobIndex;
+                existing.PoseX = mapping.PoseX;
+                existing.PoseY = mapping.PoseY;
+                existing.PoseAngle = mapping.PoseAngle;
                 existing.Description = mapping.Description;
             }
 

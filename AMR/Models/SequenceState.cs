@@ -43,6 +43,20 @@ public class SequenceState
     /// <summary>현재 단계 시작 시각</summary>
     public DateTime? StepStartedAt { get; set; }
 
+    // ===== EXCHANGE 시퀀스 상태 =====
+
+    /// <summary>교환 시퀀스 실행 중 여부</summary>
+    public bool IsExchange { get; set; }
+
+    /// <summary>ACS Exchange Job ID (교환 시퀀스에서만)</summary>
+    public string? JobId { get; set; }
+
+    /// <summary>신규 매거진 AMR 슬롯 (1|2)</summary>
+    public int LoadSlot { get; set; }
+
+    /// <summary>회수 매거진 AMR 슬롯 (3|4)</summary>
+    public int UnloadSlot { get; set; }
+
     /// <summary>데모 모드 실행 중 여부</summary>
     public bool IsDemoRunning { get; set; }
 

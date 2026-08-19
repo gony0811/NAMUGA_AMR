@@ -38,6 +38,35 @@ public enum SequenceStep
     /// <summary>Step 10: 완료 통보, Idle 복귀</summary>
     Complete = 10,
 
+    // ===== EXCHANGE 시퀀스 단계 (docs/ACS-AMR_mqtt_exchangecmd.md) =====
+
+    /// <summary>EX Step 10: 픽업지에서 신규 매거진 픽업 → AMR 슬롯 1|2 적재</summary>
+    ExPickupNew = 21,
+
+    /// <summary>EX Step 20: 설비 노드로 이동</summary>
+    ExMoveToEquip = 22,
+
+    /// <summary>EX 게이트1: actionCmd(type=UNLOAD) 취출 허가 대기</summary>
+    ExWaitUnloadPermit = 23,
+
+    /// <summary>EX Step 30: 기존 매거진 회수 (설비 → AMR 슬롯 3|4)</summary>
+    ExUnloadOld = 24,
+
+    /// <summary>EX 게이트2: actionCmd(type=LOAD) 투입 허가 대기</summary>
+    ExWaitLoadPermit = 25,
+
+    /// <summary>EX Step 40: 신규 매거진 투입 (AMR 슬롯 1|2 → 설비)</summary>
+    ExLoadNew = 26,
+
+    /// <summary>EX Step 50: 반납지로 이동 후 기존 매거진 하역</summary>
+    ExReturnOld = 27,
+
+    /// <summary>EX Step 60: 교환 완료, Idle 복귀</summary>
+    ExComplete = 28,
+
+    /// <summary>적재 후 취소(C3) — 복귀 완료, 작업자 조치 대기 (abnormal 300)</summary>
+    CancelHold = 98,
+
     /// <summary>에러 상태</summary>
     Faulted = 99
 }

@@ -12,11 +12,13 @@ public class SequenceModel : PageModel
 {
     private readonly MoveSequenceRunner _runner;
     private readonly MqttService _mqttService;
+    private readonly SequenceSimulator _simulator;
 
-    public SequenceModel(MoveSequenceRunner runner, MqttService mqttService)
+    public SequenceModel(MoveSequenceRunner runner, MqttService mqttService, SequenceSimulator simulator)
     {
         _runner = runner;
         _mqttService = mqttService;
+        _simulator = simulator;
     }
 
     public SequenceState CurrentState => _runner.State;
@@ -31,10 +33,12 @@ public class SequenceModel : PageModel
         public string? Port { get; set; }
         public int AmrSlot { get; set; } = 1;
         public string? CmdId { get; set; }   // 비어있으면 자동 생성
+        public string? Type { get; set; }    // EXCHANGE 게이트: UNLOAD(취출 허가) / LOAD(투입 허가)
+        public string? JobId { get; set; }   // EXCHANGE Job ID (비우면 게이트에서 무조건 수용)
     }
 
     /// <summary>
-    /// 설비포트 시퀀스의 WaitActionCmd 단계 트리거 — ActionCmd 를 MQTT 큐에 수동 주입.
+    /// 설비포트 시퀀스의 WaitActionCmd 단계 / EXCHANGE 게이트 트리거 — ActionCmd 를 MQTT 큐에 수동 주입.
     /// ACS 없이 테스트할 때 사용.
     /// </summary>
     public IActionResult OnPostSendActionCmd([FromBody] SendActionCmdRequest req)
@@ -48,10 +52,61 @@ public class SequenceModel : PageModel
                     : req.CmdId,
                 Command = "actionCmd",
                 Port = string.IsNullOrWhiteSpace(req.Port) ? null : req.Port,
-                AmrSlot = req.AmrSlot
+                AmrSlot = req.AmrSlot,
+                Type = string.IsNullOrWhiteSpace(req.Type) ? null : req.Type,
+                JobId = string.IsNullOrWhiteSpace(req.JobId) ? null : req.JobId
             };
             _mqttService.InjectActionCmdForTest(cmd);
-            return new JsonResult(new { success = true, cmdId = cmd.CmdId, port = cmd.Port, amrSlot = cmd.AmrSlot });
+            return new JsonResult(new { success = true, cmdId = cmd.CmdId, port = cmd.Port, amrSlot = cmd.AmrSlot, type = cmd.Type, jobId = cmd.JobId });
+        }
+        catch (Exception ex)
+        {
+            return new JsonResult(new { success = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>EXCHANGE 시퀀스 시작 요청 본문 (테스트용)</summary>
+    public class StartExchangeRequest
+    {
+        public string LoadSourceNode { get; set; } = "N001";
+        public string EquipNode { get; set; } = "N002";
+        public string UnloadDestNode { get; set; } = "N001";
+        public string Port { get; set; } = "LEFT";
+        public string? Model { get; set; }
+        public int LoadSlot { get; set; } = 1;
+        public int UnloadSlot { get; set; } = 3;
+        public string? JobId { get; set; }   // 비어있으면 자동 생성
+    }
+
+    /// <summary>EXCHANGE 전체 시퀀스 시작 (AJAX) — ACS 없이 테스트</summary>
+    public IActionResult OnPostStartExchange([FromBody] StartExchangeRequest request)
+    {
+        try
+        {
+            if (_runner.State.IsRunning)
+                return new JsonResult(new { success = false, error = "시퀀스가 이미 실행 중입니다." });
+
+            if (request.LoadSlot is not (1 or 2) || request.UnloadSlot is not (3 or 4))
+                return new JsonResult(new { success = false, error = "슬롯 지정 오류 — 투입 1|2, 회수 3|4" });
+
+            var command = new AmrCommand
+            {
+                CmdId = $"web_ex_{DateTime.Now:yyyyMMdd_HHmmss_fff}",
+                Command = "exchangeCmd",
+                JobId = string.IsNullOrWhiteSpace(request.JobId)
+                    ? $"EXWEB{DateTime.Now:yyyyMMddHHmmssfff}"
+                    : request.JobId,
+                LoadSourceNode = request.LoadSourceNode,
+                EquipNode = request.EquipNode,
+                UnloadDestNode = request.UnloadDestNode,
+                Port = request.Port,
+                Model = string.IsNullOrWhiteSpace(request.Model) ? null : request.Model,
+                LoadSlot = request.LoadSlot,
+                UnloadSlot = request.UnloadSlot
+            };
+
+            _ = _runner.RunExchangeSequenceAsync(command, HttpContext.RequestAborted);
+            return new JsonResult(new { success = true, cmdId = command.CmdId, jobId = command.JobId });
         }
         catch (Exception ex)
         {
@@ -79,7 +134,11 @@ public class SequenceModel : PageModel
             stepStartedAt = state.StepStartedAt?.ToString("HH:mm:ss.fff"),
             isDemoRunning = state.IsDemoRunning,
             demoCycle = state.DemoCycle,
-            demoStepIndex = state.DemoStepIndex
+            demoStepIndex = state.DemoStepIndex,
+            isExchange = state.IsExchange,
+            jobId = state.JobId ?? "-",
+            loadSlot = state.LoadSlot,
+            unloadSlot = state.UnloadSlot
         });
     }
 
@@ -235,6 +294,97 @@ public class SequenceModel : PageModel
             return new JsonResult(new { success = false, error = ex.Message });
         }
     }
+
+    #region 시뮬레이션 모드 (사무실 테스트 — 실장비 없이 수동 확인으로 진행)
+
+    /// <summary>시뮬레이션 상태 폴링 (AJAX)</summary>
+    public IActionResult OnGetSimState()
+    {
+        return new JsonResult(new
+        {
+            enabled = _simulator.Enabled,
+            pendingAction = _simulator.PendingAction,
+            amrSlots = _simulator.AmrSlots,
+            materialSlot1 = _simulator.MaterialSlot1,
+            materialSlot2 = _simulator.MaterialSlot2,
+            poseX = _simulator.Pose.X,
+            poseY = _simulator.Pose.Y,
+            poseAngle = _simulator.Pose.Angle,
+            moving = _simulator.Moving
+        });
+    }
+
+    /// <summary>가상 AMR 좌표 직접 설정 (초기 위치 등)</summary>
+    public IActionResult OnPostSimSetPose([FromBody] SimSetPoseRequest req)
+    {
+        _simulator.SetPose(req.X, req.Y, req.Angle);
+        return new JsonResult(new { success = true });
+    }
+
+    public class SimSetPoseRequest { public double X { get; set; } public double Y { get; set; } public double Angle { get; set; } }
+
+    /// <summary>시뮬레이션 모드 ON/OFF</summary>
+    public IActionResult OnPostSimToggle([FromBody] SimToggleRequest req)
+    {
+        try
+        {
+            if (req.Enabled && _runner.State.IsRunning)
+                return new JsonResult(new { success = false, error = "시퀀스 실행 중에는 모드를 켤 수 없습니다. 완료 또는 Abort 후 켜세요." });
+
+            _simulator.SetEnabled(req.Enabled);
+            return new JsonResult(new { success = true, enabled = _simulator.Enabled });
+        }
+        catch (Exception ex)
+        {
+            return new JsonResult(new { success = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>대기 중인 동작 완료 확인 ('동작 완료' 버튼)</summary>
+    public IActionResult OnPostSimConfirm()
+    {
+        var ok = _simulator.ConfirmPending();
+        return new JsonResult(new { success = ok, error = ok ? null : "대기 중인 동작이 없습니다." });
+    }
+
+    /// <summary>대기 중인 동작 실패 주입 (오류 경로 테스트)</summary>
+    public IActionResult OnPostSimFail()
+    {
+        var ok = _simulator.FailPending();
+        return new JsonResult(new { success = ok, error = ok ? null : "대기 중인 동작이 없습니다." });
+    }
+
+    /// <summary>가상 슬롯 상태 설정 — target: amr1~4 / mat1 / mat2</summary>
+    public IActionResult OnPostSimSetSlot([FromBody] SimSetSlotRequest req)
+    {
+        try
+        {
+            switch (req.Target)
+            {
+                case "amr1" or "amr2" or "amr3" or "amr4":
+                    _simulator.SetAmrSlot(int.Parse(req.Target[3..]), req.Occupied);
+                    break;
+                case "mat1":
+                    _simulator.MaterialSlot1 = req.Occupied;
+                    break;
+                case "mat2":
+                    _simulator.MaterialSlot2 = req.Occupied;
+                    break;
+                default:
+                    return new JsonResult(new { success = false, error = $"잘못된 대상: {req.Target}" });
+            }
+            return new JsonResult(new { success = true });
+        }
+        catch (Exception ex)
+        {
+            return new JsonResult(new { success = false, error = ex.Message });
+        }
+    }
+
+    public class SimToggleRequest { public bool Enabled { get; set; } }
+    public class SimSetSlotRequest { public string Target { get; set; } = ""; public bool Occupied { get; set; } }
+
+    #endregion
 }
 
 public class StartSequenceRequest

@@ -178,8 +178,11 @@
                         <thead class="table-light">
                             <tr>
                                 <th>위치 태그</th>
-                                <th style="width:120px">Task Index</th>
-                                <th style="width:120px">Job Index</th>
+                                <th style="width:100px">Task Index</th>
+                                <th style="width:100px">Job Index</th>
+                                <th style="width:90px" title="노드 X 좌표 (m) — 시뮬레이션 도착 pose">X (m)</th>
+                                <th style="width:90px" title="노드 Y 좌표 (m)">Y (m)</th>
+                                <th style="width:90px" title="정차 각도 (rad)">Angle (rad)</th>
                                 <th>설명</th>
                                 <th style="width:220px">작업</th>
                             </tr>
@@ -203,7 +206,7 @@
             loadMappings();
 
             $('#btnAddMapping').click(function () {
-                addEditRow({ id: 0, locationTag: '', taskIndex: 0, jobIndex: 0, description: '' });
+                addEditRow({ id: 0, locationTag: '', taskIndex: 0, jobIndex: 0, poseX: null, poseY: null, poseAngle: null, description: '' });
             });
         });
 
@@ -226,6 +229,9 @@
             row.append('<td>' + escapeHtml(m.locationTag) + '</td>');
             row.append('<td>' + m.taskIndex + '</td>');
             row.append('<td>' + m.jobIndex + '</td>');
+            row.append('<td>' + fmtNum(m.poseX) + '</td>');
+            row.append('<td>' + fmtNum(m.poseY) + '</td>');
+            row.append('<td>' + fmtNum(m.poseAngle) + '</td>');
             row.append('<td>' + escapeHtml(m.description || '') + '</td>');
             row.append(
                 '<td>' +
@@ -283,6 +289,9 @@
             row.append('<td><input type="text" class="form-control form-control-sm" value="' + escapeAttr(m.locationTag) + '" id="editTag" maxlength="50" placeholder="예: N0001" /></td>');
             row.append('<td><input type="number" class="form-control form-control-sm" value="' + m.taskIndex + '" id="editTask" min="0" max="65535" /></td>');
             row.append('<td><input type="number" class="form-control form-control-sm" value="' + m.jobIndex + '" id="editJob" min="0" max="65535" /></td>');
+            row.append('<td><input type="number" step="0.01" class="form-control form-control-sm" value="' + numAttr(m.poseX) + '" id="editPx" placeholder="X" /></td>');
+            row.append('<td><input type="number" step="0.01" class="form-control form-control-sm" value="' + numAttr(m.poseY) + '" id="editPy" placeholder="Y" /></td>');
+            row.append('<td><input type="number" step="0.01" class="form-control form-control-sm" value="' + numAttr(m.poseAngle) + '" id="editPa" placeholder="rad" /></td>');
             row.append('<td><input type="text" class="form-control form-control-sm" value="' + escapeAttr(m.description || '') + '" id="editDesc" maxlength="200" /></td>');
             row.append(
                 '<td>' +
@@ -297,6 +306,9 @@
                     locationTag: row.find('#editTag').val().trim(),
                     taskIndex: parseInt(row.find('#editTask').val()) || 0,
                     jobIndex: parseInt(row.find('#editJob').val()) || 0,
+                    poseX: parseNullable(row.find('#editPx').val()),
+                    poseY: parseNullable(row.find('#editPy').val()),
+                    poseAngle: parseNullable(row.find('#editPa').val()),
                     description: row.find('#editDesc').val().trim() || null
                 };
 
@@ -330,6 +342,10 @@
             $('#noMappingMsg').hide();
             row.find('#editTag').focus();
         }
+
+        function fmtNum(v) { return (v === null || v === undefined) ? '<span class="text-muted">-</span>' : Number(v).toFixed(2); }
+        function numAttr(v) { return (v === null || v === undefined) ? '' : v; }
+        function parseNullable(v) { v = (v || '').toString().trim(); if (v === '') return null; var n = parseFloat(v); return isNaN(n) ? null : n; }
 
         function escapeHtml(str) {
             var div = document.createElement('div');

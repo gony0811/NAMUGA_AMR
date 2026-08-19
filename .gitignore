@@ -416,3 +416,13 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# --- NAMUGA_AMR 로컬 산출물 ---
+[Bb]in/
+Logs/
+*.db
+*.db-wal
+*.db-shm
+.idea/
+.DS_Store
+.claude/launch.json

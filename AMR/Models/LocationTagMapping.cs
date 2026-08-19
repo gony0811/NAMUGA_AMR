@@ -26,4 +26,13 @@ public class LocationTagMapping
     /// <summary>설명 (선택)</summary>
     [MaxLength(200)]
     public string? Description { get; set; }
+
+    /// <summary>노드 X 좌표 (m) — 시뮬레이션 모드에서 도착 시 status pose 로 발행 (선택)</summary>
+    public double? PoseX { get; set; }
+
+    /// <summary>노드 Y 좌표 (m)</summary>
+    public double? PoseY { get; set; }
+
+    /// <summary>노드 정차 각도 (rad)</summary>
+    public double? PoseAngle { get; set; }
 }
