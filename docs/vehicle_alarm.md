@@ -98,14 +98,14 @@
 - No empty slot on the material port. Sequence aborts.
 
 ---
-# EXCHANGE 시나리오 신규 알람 (2026-08-11 초안 — docs/ACS-AMR_mqtt_exchangecmd.md 참조)
+# EXCHANGE 시나리오 신규 알람 (docs/ACS-AMR_mqtt_exchange_v0.3.docx §6.1)
 
 ## ERR-114
 ### Pickup Source Magazine Not Found
 ### Severity (Level: Warning | Critical)
 - Critical
 ### Condition
-1. exchangeCmd 픽업 단계(PICKUP_NEW)에서 LoadSourceNode 포트에 매거진 미검출 (깊이감지/센서)
+1. 픽업 구간(moveCmd UNLOAD, 자재포트/버퍼)에서 슬롯1/2 모두 매거진 미검출 (깊이감지)
 ### Description
 - No magazine at the exchange pickup source. Job ends immediately with FAILED (resultCode=30, MAGAZINE_NOT_FOUND). No retry by AMR/ACS — MES must re-issue EXCHANGECMD.
 
@@ -114,8 +114,8 @@
 ### Severity (Level: Warning | Critical)
 - Critical
 ### Condition
-1. 교환 시퀀스 중 지정 슬롯(loadSlot 1|2 / unloadSlot 3|4) 상태가 기대와 불일치
-   - 예: LOAD_NEW 직전 loadSlot 매거진 소실, UNLOAD_OLD 직전 unloadSlot 점유
+1. actionCmd 실행 중 지정 amrSlot 상태가 기대와 불일치
+   - UNLOAD(OLD 취출): 회수슬롯(3|4)이 이미 점유 / LOAD(NEW 투입): 투입슬롯(1|2)이 비어 있음
 ### Description
 - Slot sensor state does not match the assigned exchange slots. Sequence aborts with FAILED (resultCode=31).
 
@@ -124,6 +124,6 @@
 ### Severity (Level: Warning | Critical)
 - Critical
 ### Condition
-1. 교환 게이트(actionCmd UNLOAD/LOAD 허가) 대기 시간이 설정 상한 초과 (상한 설정 시에만 발동)
+1. 설비포트 actionCmd 대기 시간이 설정 상한 초과 (기본 무제한 — 상한 설정 시에만 발동)
 ### Description
 - Equipment permission (ACTIONCMD relay) did not arrive within the configured limit. Sequence aborts with FAILED (resultCode=32).

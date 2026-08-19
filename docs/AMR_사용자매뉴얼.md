@@ -345,6 +345,21 @@ QR을 읽는 지점과 실제 작업 지점의 위치 차이를 소프트웨어�
 
 ---
 
+
+## 부록 A. 사무실 시뮬레이션 테스트 (실장비 없이)
+
+Sequence 화면 상단 **🖥️ 시뮬레이션 모드** 카드에서 **[모드 ON]** 을 켜면 AMR 이동·Cobot 동작이 **[동작 완료]** 버튼 대기로 바뀌고, 슬롯 센서는 화면의 가상 상태를 사용합니다. ACS 와는 실제 MQTT 로 통신하며, status(pose)와 reply 도 그대로 발행됩니다.
+
+**Exchange (v0.3) 테스트 순서** — ACS 가 구간별로 지시하는 순서와 동일:
+
+1. `moveCmd UNLOAD` (픽업지, AMR Slot=투입슬롯 1|2) → 동작 완료 반복 → COMPLETED
+2. `moveCmd EXCHANGE` (설비, PortType=EQP) → 도착 → ARRIVED·COMPLETED → **ExchangeDocked** 대기
+3. ActionCmd **Type=UNLOAD**, AMR Slot=회수슬롯(3|4) → OLD 취출 → COMPLETED(step 30)
+4. ActionCmd **Type=LOAD**, AMR Slot=투입슬롯(1|2) → NEW 투입 → COMPLETED(step 40)
+5. `moveCmd LOAD` (반납지, AMR Slot=회수슬롯) → 하역 → COMPLETED
+
+> 설정 → 위치 태그 매핑에 각 노드의 **좌표(X/Y/Angle)** 를 입력해 두면, 이동 완료 시 status pose 가 해당 좌표로 갱신되어 ACS 의 좌표 기반 도착 판정도 검증할 수 있습니다.
+
 ## 7. 문제 해결
 
 | 증상 | 원인 | 조치 |

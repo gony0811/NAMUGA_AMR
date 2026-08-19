@@ -43,19 +43,19 @@ public class SequenceState
     /// <summary>현재 단계 시작 시각</summary>
     public DateTime? StepStartedAt { get; set; }
 
-    // ===== EXCHANGE 시퀀스 상태 =====
+    // ===== EXCHANGE 상태 (v0.3) =====
 
-    /// <summary>교환 시퀀스 실행 중 여부</summary>
-    public bool IsExchange { get; set; }
+    /// <summary>설비 앞 도킹 대기 중 (moveCmd EXCHANGE 완료 후, actionCmd 수신 대기) — CurrentStep=ExchangeDocked</summary>
+    public bool IsExchangeDocked { get; set; }
 
-    /// <summary>ACS Exchange Job ID (교환 시퀀스에서만)</summary>
+    /// <summary>현재 교환 Job ID (moveCmd EXCHANGE 의 cmdId/jobId) — actionCmd/cancelCmd 대조용</summary>
     public string? JobId { get; set; }
 
-    /// <summary>신규 매거진 AMR 슬롯 (1|2)</summary>
-    public int LoadSlot { get; set; }
+    /// <summary>설비 모델 (도킹 시 moveCmd 의 model — actionCmd 에 model 없을 때 오프셋 보정용)</summary>
+    public string? ExchangeModel { get; set; }
 
-    /// <summary>회수 매거진 AMR 슬롯 (3|4)</summary>
-    public int UnloadSlot { get; set; }
+    /// <summary>마지막 actionCmd 의 type (UNLOAD/LOAD) — UI 표시용</summary>
+    public string? LastActionType { get; set; }
 
     /// <summary>데모 모드 실행 중 여부</summary>
     public bool IsDemoRunning { get; set; }

@@ -29,35 +29,12 @@ public class AmrCommand
     /// <summary>모델 정보 (ACS 전달) — 모델별 LOAD/UNLOAD offset 보정에 사용</summary>
     public string? Model { get; set; }
 
-    // ===== EXCHANGE 시나리오 확장 (docs/ACS-AMR_mqtt_exchangecmd.md) =====
+    // ===== EXCHANGE 확장 (docs/ACS-AMR_mqtt_exchange_v0.3.docx) =====
 
-    /// <summary>ACS Exchange Job ID — exchangeCmd/actionCmd/cancelCmd 공통, 모든 보고에 그대로 반환</summary>
+    /// <summary>ACS Job ID — actionCmd/cancelCmd 에서 진행 중 job 과 대조. reply 에 그대로 반환</summary>
     public string? JobId { get; set; }
 
-    /// <summary>[exchangeCmd] 신규 매거진 픽업 위치 NodeId (Loc→NodeId 변환은 ACS 담당)</summary>
-    public string? LoadSourceNode { get; set; }
-
-    /// <summary>[exchangeCmd] 대상 설비 NodeId</summary>
-    public string? EquipNode { get; set; }
-
-    /// <summary>[exchangeCmd] 기존 매거진 반납 위치 NodeId</summary>
-    public string? UnloadDestNode { get; set; }
-
-    /// <summary>[exchangeCmd] 신규 매거진 AMR 슬롯 (1|2, ACS 자동배정)</summary>
-    public int LoadSlot { get; set; }
-
-    /// <summary>[exchangeCmd] 회수 매거진 AMR 슬롯 (3|4, ACS 자동배정)</summary>
-    public int UnloadSlot { get; set; }
-
-    /// <summary>[exchangeCmd] 픽업지 포트 유형 (기본 MATERIAL)</summary>
-    public string? LoadSourcePortType { get; set; }
-
-    /// <summary>[exchangeCmd] 반납지 포트 유형 (기본 MATERIAL)</summary>
-    public string? UnloadDestPortType { get; set; }
-
-    /// <summary>[actionCmd] 게이트 허가 유형 — UNLOAD(취출 허가) / LOAD(투입 허가)</summary>
+    /// <summary>[actionCmd] 이번 액션 유형 — UNLOAD(기존 매거진 취출, 회수슬롯 PLACE) / LOAD(신규 매거진 투입, 투입슬롯 PICK).
+    /// PICK/PLACE 결정에 type 이 있으면 type 우선, 없으면 jobType 사용</summary>
     public string? Type { get; set; }
-
-    /// <summary>[cancelCmd] 적재 후 취소 시 복귀 노드 (생략 시 자동충전 노드)</summary>
-    public string? ReturnNode { get; set; }
 }

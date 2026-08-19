@@ -97,6 +97,7 @@
                                 <option value="">없음</option>
                                 <option value="LOAD">LOAD</option>
                                 <option value="UNLOAD">UNLOAD</option>
+                                <option value="EXCHANGE">EXCHANGE (설비 도킹)</option>
                             </select>
                         </div>
                         <div class="col-4">
@@ -213,7 +214,29 @@
                 </div>
             </div>
 
-            @* EXCHANGE 시퀀스 테스트 (docs/ACS-AMR_mqtt_exchangecmd.md) *@
+            @* EXCHANGE v0.3 테스트 안내 — ACS 가 구간별 moveCmd/actionCmd 로 지시 *@
+            <div class="card mb-3 border-primary">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Exchange (v0.3) 테스트 순서</h5>
+                </div>
+                <div class="card-body small">
+                    <ol class="mb-2 ps-3">
+                        <li><strong>시퀀스 제어</strong>에서 JobType=<code>UNLOAD</code>, PortType=자재포트, AMR Slot=투입슬롯(1|2) → Start (픽업지 NEW 적재)</li>
+                        <li>JobType=<code>EXCHANGE</code>, PortType=설비포트, Port, AMR Slot=투입슬롯 → Start → 도착·도킹 후 <span class="badge bg-info">ExchangeDocked</span> 대기</li>
+                        <li><strong>ActionCmd 송신</strong> Type=<code>UNLOAD</code>, AMR Slot=회수슬롯(3|4) → OLD 취출 → COMPLETED(30)</li>
+                        <li>ActionCmd Type=<code>LOAD</code>, AMR Slot=투입슬롯(1|2) → NEW 투입 → COMPLETED(40)</li>
+                        <li>JobType=<code>LOAD</code>, PortType=자재포트, AMR Slot=회수슬롯 → Start (반납지 하역)</li>
+                    </ol>
+                    <div class="text-muted">같은 Job ID(cmdId) 를 쓰려면 아래 Job ID 칸에 입력하세요. 비우면 자동 생성됩니다.</div>
+                    <div class="input-group input-group-sm mt-1">
+                        <span class="input-group-text">Job ID</span>
+                        <input id="seqJobId" class="form-control" placeholder="(선택) EX2026…" />
+                        <span class="input-group-text">Model</span>
+                        <input id="seqModel" class="form-control" placeholder="(선택)" />
+                    </div>
+                </div>
+            </div>
+
             <div class="card mb-3">
                 <div class="card-header">
                     <h5 class="card-title mb-0">Exchange 시퀀스 (매거진 교환 테스트)</h5>
@@ -451,9 +474,7 @@
         'Idle': 0, 'MoveCmdReceived': 1, 'MoveCmdReply': 2, 'SendMoveCommand': 3,
         'WaitArrival': 4, 'WaitActionCmd': 5, 'CobotQrPosition': 6, 'CameraQrRead': 7,
         'CobotPickup': 8, 'CobotPlace': 9, 'Complete': 10,
-        'ExPickupNew': 21, 'ExMoveToEquip': 22, 'ExWaitUnloadPermit': 23, 'ExUnloadOld': 24,
-        'ExWaitLoadPermit': 25, 'ExLoadNew': 26, 'ExReturnOld': 27, 'ExComplete': 28,
-        'CancelHold': 98, 'Faulted': 99
+        'ExchangeDocked': 21, 'ExchangeAction': 22, 'Faulted': 99
     };
 
     function startPolling() {
@@ -602,7 +623,9 @@
             port: $('#port').val(),
             jobType: $('#jobType').val(),
             portType: $('#portType').val(),
-            amrSlot: parseInt($('#amrSlot').val()) || 1
+            amrSlot: parseInt($('#amrSlot').val()) || 1,
+            jobId: $('#seqJobId').val() || null,
+            model: $('#seqModel').val() || null
         };
 
         $.ajax({
@@ -763,42 +786,6 @@
             url: '/Sequence?handler=SimSetSlot', method: 'POST', contentType: 'application/json',
             data: JSON.stringify({ Target: target, Occupied: !on }),
             success: function (res) { $('#simResult').text(res.success ? '' : res.error); pollSimState(); }
-        });
-    }
-
-    function startExchange() {
-        var payload = {
-            LoadSourceNode: $('#exLoadSource').val(),
-            EquipNode: $('#exEquip').val(),
-            UnloadDestNode: $('#exUnloadDest').val(),
-            Port: $('#exPort').val(),
-            LoadSlot: parseInt($('#exLoadSlot').val(), 10),
-            UnloadSlot: parseInt($('#exUnloadSlot').val(), 10),
-            Model: $('#exModel').val()
-        };
-        var $btn = $('#btnStartExchange').prop('disabled', true);
-        var $result = $('#exchangeResult');
-        $result.removeClass('text-success text-danger').addClass('text-muted').text('시작 중...');
-
-        $.ajax({
-            url: '/Sequence?handler=StartExchange',
-            method: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify(payload),
-            success: function (res) {
-                if (res.success) {
-                    $result.removeClass('text-muted').addClass('text-success')
-                        .text('Exchange 시작: Job=' + res.jobId);
-                    // 게이트 주입 편의 — ActionCmd 패널의 JobId 를 자동 채움
-                    $('#actionJobId').val(res.jobId);
-                } else {
-                    $result.removeClass('text-muted').addClass('text-danger').text('실패: ' + res.error);
-                }
-            },
-            error: function () {
-                $result.removeClass('text-muted').addClass('text-danger').text('요청 실패');
-            },
-            complete: function () { $btn.prop('disabled', false); }
         });
     }
 

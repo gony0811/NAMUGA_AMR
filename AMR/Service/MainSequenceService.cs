@@ -134,17 +134,13 @@ public class MainSequenceService : BackgroundService
             {
                 await HandleMoveCmdAsync(command, ct);
             }
-            else if (command.Command == "exchangeCmd")
+            else if (command.Command == "actionCmd")
             {
-                await HandleExchangeCmdAsync(command, ct);
+                await HandleActionCmdAsync(command, ct);
             }
             else if (command.Command == "cancelCmd")
             {
                 await HandleCancelCmdAsync(command, ct);
-            }
-            else if (command.Command == "actionCmd")
-            {
-                // actionCmd 는 MqttService 큐로 소비 (moveCmd Step5 / exchange 게이트) — 여기서는 무시
             }
             else
             {
@@ -173,7 +169,7 @@ public class MainSequenceService : BackgroundService
         {
             _logger.LogWarning("AMR 미연결 상태에서 moveCmd 수신: NodeId={NodeId}", command.NodeId);
             await ReplyAsync(command.CmdId, "REJECTED", 10,
-                "AMR Modbus TCP가 연결되어 있지 않습니다.", ct);
+                "AMR Modbus TCP가 연결되어 있지 않습니다.", ct, command.JobId ?? command.CmdId);
             return;
         }
 
@@ -182,7 +178,7 @@ public class MainSequenceService : BackgroundService
         {
             _logger.LogWarning("시퀀스 실행 중에 moveCmd 수신: NodeId={NodeId}", command.NodeId);
             await ReplyAsync(command.CmdId, "REJECTED", 11,
-                "시퀀스가 현재 실행 중입니다.", ct);
+                "시퀀스가 현재 실행 중입니다.", ct, command.JobId ?? command.CmdId);
             return;
         }
 
@@ -203,183 +199,110 @@ public class MainSequenceService : BackgroundService
             if (await _cobotService.IsManualOrUnavailableAsync(ct))
             {
                 _logger.LogWarning("Cobot Manual/미연결 상태에서 moveCmd 거부: NodeId={NodeId}", command.NodeId);
-                await ReplyAsync(command.CmdId, "REJECTED", 12,
+                await ReplyAsync(command.CmdId, "REJECTED", 22,
                     "Cobot이 Manual 모드이거나 연결되지 않아 이동 명령을 수행할 수 없습니다.", ct);
                 return;
             }
         }
 
-        // 5. 시퀀스 실행 (Fire-and-forget: 시퀀스는 백그라운드에서 진행)
-        _logger.LogInformation("Move 시퀀스 시작: NodeId={NodeId}, Port={Port}, JobType={JobType}",
-            command.NodeId, command.Port, command.JobType);
-        _ = _sequenceRunner.RunSequenceAsync(command, ct);
-    }
-
-    /// <summary>
-    /// exchangeCmd 수락 검증 및 시퀀스 시작 (docs/ACS-AMR_mqtt_exchangecmd.md 4장).
-    /// 수락 조건: AMR 연결 · Idle · Cobot Auto/Run · 3개 노드 매핑 존재 · loadSlot/unloadSlot 빈 슬롯.
-    /// </summary>
-    private async Task HandleExchangeCmdAsync(AmrCommand command, CancellationToken ct)
-    {
-        var jobId = command.JobId;
-
-        // 0. 필수 필드 검증
-        if (string.IsNullOrWhiteSpace(jobId) ||
-            string.IsNullOrWhiteSpace(command.LoadSourceNode) ||
-            string.IsNullOrWhiteSpace(command.EquipNode) ||
-            string.IsNullOrWhiteSpace(command.UnloadDestNode))
+        // 5. amrSlot 상태 검증 (v0.3 §6 resultCode 21) — UNLOAD(픽업→AMR)는 빈 슬롯, LOAD(AMR→포트)는 점유 슬롯이어야 함.
+        //    EXCHANGE(설비행)는 슬롯 조작 없음 → 검증 생략. CHARGE 도 생략.
+        var jt = (command.JobType ?? "").ToUpperInvariant();
+        if (jt is "UNLOAD" or "LOAD")
         {
-            await ReplyAsync(command.CmdId, "REJECTED", 2,
-                "exchangeCmd 필수 필드 누락 (jobId/loadSourceNode/equipNode/unloadDestNode)", ct, jobId);
-            return;
-        }
+            var slot = Math.Clamp(command.AmrSlot, 1, 4);
+            bool? occupied = null;
+            if (sim) occupied = _simulator.GetAmrSlot(slot);
+            else if (_ioModuleService.CurrentInputs is { } inp)
+                occupied = slot switch { 1 => inp.MzDetect1, 2 => inp.MzDetect2, 3 => inp.MzDetect3, _ => inp.MzDetect4 };
 
-        // 시뮬레이션 모드: 하드웨어(AMR/Cobot/I/O) 검증 생략, 슬롯은 가상 상태 사용 — ACS 통신 시뮬레이션 지원
-        var sim = _simulator.Enabled;
-        if (sim)
-            _logger.LogInformation("[SIM] exchangeCmd 수락 검증 — 하드웨어 검증 생략, 가상 슬롯 사용 (Job={JobId})", jobId);
-
-        // 1. AMR 연결 상태 확인 → 10
-        if (!sim && !_amrService.IsConnected)
-        {
-            _logger.LogWarning("AMR 미연결 상태에서 exchangeCmd 수신: Job={JobId}", jobId);
-            await ReplyAsync(command.CmdId, "REJECTED", 10,
-                "AMR Modbus TCP가 연결되어 있지 않습니다.", ct, jobId);
-            return;
-        }
-
-        // 2. 시퀀스 실행 중 / AMR 이동 중 확인 → 11
-        if (_sequenceRunner.State.IsRunning)
-        {
-            _logger.LogWarning("시퀀스 실행 중에 exchangeCmd 수신: Job={JobId}", jobId);
-            await ReplyAsync(command.CmdId, "REJECTED", 11,
-                "시퀀스가 현재 실행 중입니다.", ct, jobId);
-            return;
-        }
-
-        if (!sim)
-        {
-            var status = await _amrService.ReadStatusAsync(ct);
-            if (status.RobotState != RobotState.Stopped)
+            if (occupied is bool occ)
             {
-                await ReplyAsync(command.CmdId, "REJECTED", 11,
-                    $"AMR이 현재 이동 중입니다. (상태: {status.RobotState})", ct, jobId);
-                return;
-            }
-
-            // 3. Cobot 준비 확인 → 22
-            if (await _cobotService.IsManualOrUnavailableAsync(ct))
-            {
-                _logger.LogWarning("Cobot Manual/미연결 상태에서 exchangeCmd 거부: Job={JobId}", jobId);
-                await ReplyAsync(command.CmdId, "REJECTED", 22,
-                    "Cobot이 Manual 모드이거나 연결되지 않아 교환 명령을 수행할 수 없습니다.", ct, jobId);
-                return;
-            }
-        }
-
-        // 4. 슬롯 규칙(투입 1|2, 회수 3|4) 및 슬롯 상태 확인 → 21
-        if (command.LoadSlot is not (1 or 2) || command.UnloadSlot is not (3 or 4))
-        {
-            await ReplyAsync(command.CmdId, "REJECTED", 21,
-                $"슬롯 지정 오류 — loadSlot={command.LoadSlot}(허용 1|2), unloadSlot={command.UnloadSlot}(허용 3|4)", ct, jobId);
-            return;
-        }
-
-        bool SlotOccupied(int slot)
-        {
-            if (sim) return _simulator.GetAmrSlot(slot);
-
-            var inputs = _ioModuleService.CurrentInputs;
-            if (inputs == null) return true;   // 미수신 시 점유로 간주 (아래에서 별도 거부)
-            return slot switch
-            {
-                1 => inputs.MzDetect1,
-                2 => inputs.MzDetect2,
-                3 => inputs.MzDetect3,
-                4 => inputs.MzDetect4,
-                _ => true
-            };
-        }
-
-        if (!sim && _ioModuleService.CurrentInputs == null)
-        {
-            await ReplyAsync(command.CmdId, "REJECTED", 21,
-                "I/O 모듈 입력 미수신 — 슬롯 상태를 확인할 수 없습니다.", ct, jobId);
-            return;
-        }
-
-        if (SlotOccupied(command.LoadSlot))
-        {
-            await ReplyAsync(command.CmdId, "REJECTED", 21,
-                $"loadSlot {command.LoadSlot} 이 이미 점유 중입니다.", ct, jobId);
-            return;
-        }
-        if (SlotOccupied(command.UnloadSlot))
-        {
-            await ReplyAsync(command.CmdId, "REJECTED", 21,
-                $"unloadSlot {command.UnloadSlot} 이 이미 점유 중입니다.", ct, jobId);
-            return;
-        }
-
-        // 5. 3개 노드 모두 위치 태그 매핑 존재 확인 → 20 (시뮬레이션은 이동을 생략하므로 매핑 불필요)
-        if (!sim)
-        {
-            await using var db = await _dbFactory.CreateDbContextAsync(ct);
-            var nodes = new[] { command.LoadSourceNode!, command.EquipNode!, command.UnloadDestNode! };
-            foreach (var node in nodes)
-            {
-                var exists = await db.LocationTagMappings.AnyAsync(m => m.LocationTag == node, ct);
-                if (!exists)
+                var expectOccupied = jt == "LOAD";
+                if (occ != expectOccupied)
                 {
-                    await ReplyAsync(command.CmdId, "REJECTED", 20,
-                        $"위치 태그 매핑 없음: {node}", ct, jobId);
+                    await ReplyAsync(command.CmdId, "REJECTED", 21,
+                        $"amrSlot {slot} 상태 불일치 — {jt} 에는 {(expectOccupied ? "매거진이 있어야" : "빈 슬롯이어야")} 합니다.", ct,
+                        command.JobId ?? command.CmdId);
                     return;
                 }
             }
         }
 
-        // 6. 교환 시퀀스 실행 (Fire-and-forget) — ACCEPTED 는 러너가 발행
-        _logger.LogInformation(
-            "Exchange 시퀀스 시작: Job={JobId}, 픽업={Load}, 설비={Equip}({Port}), 반납={Dest}, 슬롯={LoadSlot}/{UnloadSlot}",
-            jobId, command.LoadSourceNode, command.EquipNode, command.Port, command.UnloadDestNode,
-            command.LoadSlot, command.UnloadSlot);
-        _ = _sequenceRunner.RunExchangeSequenceAsync(command, ct);
+        // 6. 시퀀스 실행 (Fire-and-forget: 시퀀스는 백그라운드에서 진행)
+        _logger.LogInformation("Move 시퀀스 시작: NodeId={NodeId}, Port={Port}, JobType={JobType}, AmrSlot={Slot}",
+            command.NodeId, command.Port, command.JobType, command.AmrSlot);
+        _ = _sequenceRunner.RunSequenceAsync(command, ct);
     }
 
     /// <summary>
-    /// cancelCmd 처리 (docs/ACS-AMR_mqtt_exchangecmd.md 7장).
-    /// 실행 중 jobId 일치(C2/C3) → CANCELED(0) 응답 후 러너가 중단/복귀 수행.
-    /// 미실행/불일치(C4) → CANCELED(40, CANCEL_REJECTED).
+    /// actionCmd 처리 (v0.3 §4.2).
+    ///   - 설비 앞 도킹 대기(ExchangeDocked) 상태: jobId 대조 후 RunActionAsync 로 독립 실행 (UNLOAD/LOAD 작업 + COMPLETED)
+    ///   - 일반 moveCmd 설비포트 Step5 대기 중: MqttService 큐에 이미 들어가 있으므로 시퀀스가 소비 — 여기서는 무시
+    ///   - 그 외(미도킹·미실행): 무시 + 경고 로그 (사양: "그 외는 무시+로그")
     /// </summary>
-    private async Task HandleCancelCmdAsync(AmrCommand command, CancellationToken ct)
+    private async Task HandleActionCmdAsync(AmrCommand command, CancellationToken ct)
     {
-        var jobId = command.JobId;
+        var state = _sequenceRunner.State;
 
-        if (string.IsNullOrWhiteSpace(jobId))
+        if (state.IsExchangeDocked && !state.IsRunning)
         {
-            await ReplyAsync(command.CmdId, "CANCELED", 40,
-                "CANCEL_REJECTED — jobId 누락", ct, jobId);
+            var jobOk = string.IsNullOrWhiteSpace(command.JobId) ||
+                        string.Equals(command.JobId, state.JobId, StringComparison.OrdinalIgnoreCase);
+            if (!jobOk)
+            {
+                _logger.LogWarning("actionCmd jobId 불일치 — 무시 (수신={Recv}, 진행={Cur})", command.JobId, state.JobId);
+                return;
+            }
+
+            var kind = (command.Type ?? command.JobType ?? "").ToUpperInvariant();
+            if (kind is not ("UNLOAD" or "LOAD"))
+            {
+                _logger.LogWarning("actionCmd type 불명 — 무시 (type={Type}, jobType={JobType})", command.Type, command.JobType);
+                return;
+            }
+
+            _logger.LogInformation("actionCmd 독립 실행: type={Type}, amrSlot={Slot}, port={Port} (Job={JobId})",
+                kind, command.AmrSlot, command.Port, state.JobId);
+            _ = _sequenceRunner.RunActionAsync(command, ct);
             return;
         }
 
-        // 복귀 노드: cancelCmd.returnNode 지정 시 사용, 생략 시 자동충전 노드 (협의 #3 초안 가정)
-        var returnNode = string.IsNullOrWhiteSpace(command.ReturnNode)
-            ? _idleChargeService.ChargeNodeId
-            : command.ReturnNode;
+        if (state.IsRunning)
+        {
+            // moveCmd 설비포트 Step5(WaitActionCmd) 가 MqttService 큐에서 소비
+            _logger.LogInformation("actionCmd — 진행 중 시퀀스가 큐에서 소비 (CmdId={CmdId})", command.CmdId);
+            return;
+        }
 
-        var accepted = _sequenceRunner.RequestCancel(jobId!, returnNode);
+        _logger.LogWarning("actionCmd 무시 — 설비 도킹 대기/진행 중 상태가 아님 (CmdId={CmdId})", command.CmdId);
+    }
 
+    /// <summary>
+    /// cancelCmd 처리 (v0.3 §4.3) — 진행 중 명령 폐기 → 정지 → Idle → CANCELED(0).
+    /// 미진행/jobId 불일치 → CANCELED(40, CANCEL_REJECTED). 복귀 이동·ALARM 은 ACS 가 별도 처리.
+    /// </summary>
+    private async Task HandleCancelCmdAsync(AmrCommand command, CancellationToken ct)
+    {
+        var jobId = command.JobId ?? command.CmdId;
+
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            await ReplyAsync(command.CmdId, "CANCELED", 40, "CANCEL_REJECTED — jobId 누락", ct, jobId);
+            return;
+        }
+
+        var accepted = _sequenceRunner.RequestCancel(jobId);
         if (accepted)
         {
-            _logger.LogWarning("Job 취소 승인: Job={JobId}, 복귀노드={ReturnNode}", jobId, returnNode);
-            await ReplyAsync(command.CmdId, "CANCELED", 0,
-                $"취소 승인: Job={jobId} (복귀노드={returnNode ?? "미지정"})", ct, jobId);
+            _logger.LogWarning("Job 취소 승인: Job={JobId} — 정지 후 Idle", jobId);
+            await ReplyAsync(command.CmdId, "CANCELED", 0, $"취소 승인: Job={jobId}", ct, jobId);
         }
         else
         {
-            _logger.LogWarning("Job 취소 거부(C4): Job={JobId} — 미실행 또는 jobId 불일치", jobId);
+            _logger.LogWarning("Job 취소 거부(C4): Job={JobId} — 미진행 또는 jobId 불일치", jobId);
             await ReplyAsync(command.CmdId, "CANCELED", 40,
-                $"CANCEL_REJECTED — 해당 Job 이 실행 중이 아니거나 이미 종료되었습니다: {jobId}", ct, jobId);
+                $"CANCEL_REJECTED — 해당 Job 이 진행 중이 아니거나 이미 종료되었습니다: {jobId}", ct, jobId);
         }
     }
 

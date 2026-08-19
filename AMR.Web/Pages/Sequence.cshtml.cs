@@ -56,57 +56,20 @@ public class SequenceModel : PageModel
                 Type = string.IsNullOrWhiteSpace(req.Type) ? null : req.Type,
                 JobId = string.IsNullOrWhiteSpace(req.JobId) ? null : req.JobId
             };
-            _mqttService.InjectActionCmdForTest(cmd);
-            return new JsonResult(new { success = true, cmdId = cmd.CmdId, port = cmd.Port, amrSlot = cmd.AmrSlot, type = cmd.Type, jobId = cmd.JobId });
-        }
-        catch (Exception ex)
-        {
-            return new JsonResult(new { success = false, error = ex.Message });
-        }
-    }
-
-    /// <summary>EXCHANGE 시퀀스 시작 요청 본문 (테스트용)</summary>
-    public class StartExchangeRequest
-    {
-        public string LoadSourceNode { get; set; } = "N001";
-        public string EquipNode { get; set; } = "N002";
-        public string UnloadDestNode { get; set; } = "N001";
-        public string Port { get; set; } = "LEFT";
-        public string? Model { get; set; }
-        public int LoadSlot { get; set; } = 1;
-        public int UnloadSlot { get; set; } = 3;
-        public string? JobId { get; set; }   // 비어있으면 자동 생성
-    }
-
-    /// <summary>EXCHANGE 전체 시퀀스 시작 (AJAX) — ACS 없이 테스트</summary>
-    public IActionResult OnPostStartExchange([FromBody] StartExchangeRequest request)
-    {
-        try
-        {
-            if (_runner.State.IsRunning)
-                return new JsonResult(new { success = false, error = "시퀀스가 이미 실행 중입니다." });
-
-            if (request.LoadSlot is not (1 or 2) || request.UnloadSlot is not (3 or 4))
-                return new JsonResult(new { success = false, error = "슬롯 지정 오류 — 투입 1|2, 회수 3|4" });
-
-            var command = new AmrCommand
+            // v0.3: 설비 앞 도킹 대기(ExchangeDocked) 상태면 독립 작업으로 실행, 그 외엔 큐 주입(설비포트 moveCmd Step5)
+            var st = _runner.State;
+            if (st.IsExchangeDocked && !st.IsRunning && !string.IsNullOrWhiteSpace(cmd.Type))
             {
-                CmdId = $"web_ex_{DateTime.Now:yyyyMMdd_HHmmss_fff}",
-                Command = "exchangeCmd",
-                JobId = string.IsNullOrWhiteSpace(request.JobId)
-                    ? $"EXWEB{DateTime.Now:yyyyMMddHHmmssfff}"
-                    : request.JobId,
-                LoadSourceNode = request.LoadSourceNode,
-                EquipNode = request.EquipNode,
-                UnloadDestNode = request.UnloadDestNode,
-                Port = request.Port,
-                Model = string.IsNullOrWhiteSpace(request.Model) ? null : request.Model,
-                LoadSlot = request.LoadSlot,
-                UnloadSlot = request.UnloadSlot
-            };
+                cmd.JobType ??= "EXCHANGE";
+                cmd.JobId ??= st.JobId;
+                cmd.NodeId = st.NodeId ?? cmd.NodeId;
+                cmd.Port ??= st.Port;
+                _ = _runner.RunActionAsync(cmd, HttpContext.RequestAborted);
+                return new JsonResult(new { success = true, mode = "action", cmdId = cmd.CmdId, type = cmd.Type, amrSlot = cmd.AmrSlot, jobId = cmd.JobId });
+            }
 
-            _ = _runner.RunExchangeSequenceAsync(command, HttpContext.RequestAborted);
-            return new JsonResult(new { success = true, cmdId = command.CmdId, jobId = command.JobId });
+            _mqttService.InjectActionCmdForTest(cmd);
+            return new JsonResult(new { success = true, mode = "queue", cmdId = cmd.CmdId, port = cmd.Port, amrSlot = cmd.AmrSlot, type = cmd.Type, jobId = cmd.JobId });
         }
         catch (Exception ex)
         {
@@ -135,10 +98,9 @@ public class SequenceModel : PageModel
             isDemoRunning = state.IsDemoRunning,
             demoCycle = state.DemoCycle,
             demoStepIndex = state.DemoStepIndex,
-            isExchange = state.IsExchange,
+            isExchangeDocked = state.IsExchangeDocked,
             jobId = state.JobId ?? "-",
-            loadSlot = state.LoadSlot,
-            unloadSlot = state.UnloadSlot
+            lastActionType = state.LastActionType ?? "-"
         });
     }
 
@@ -195,15 +157,18 @@ public class SequenceModel : PageModel
             if (_runner.State.IsRunning)
                 return new JsonResult(new { success = false, error = "시퀀스가 이미 실행 중입니다." });
 
+            var cmdId = string.IsNullOrWhiteSpace(request.JobId) ? $"web_{DateTime.Now:yyyyMMdd_HHmmss_fff}" : request.JobId!;
             var command = new AmrCommand
             {
-                CmdId = $"web_{DateTime.Now:yyyyMMdd_HHmmss_fff}",
+                CmdId = cmdId,
+                JobId = cmdId,
                 Command = "moveCmd",
                 NodeId = request.NodeId,
                 Port = string.IsNullOrEmpty(request.Port) ? null : request.Port,
                 JobType = string.IsNullOrEmpty(request.JobType) ? null : request.JobType,
                 PortType = string.IsNullOrEmpty(request.PortType) ? null : request.PortType,
-                AmrSlot = request.AmrSlot
+                AmrSlot = request.AmrSlot,
+                Model = string.IsNullOrWhiteSpace(request.Model) ? null : request.Model
             };
 
             _ = _runner.RunSequenceAsync(command, HttpContext.RequestAborted);
@@ -394,6 +359,8 @@ public class StartSequenceRequest
     public string? JobType { get; set; }
     public string? PortType { get; set; }
     public int AmrSlot { get; set; } = 1;
+    public string? Model { get; set; }
+    public string? JobId { get; set; }   // EXCHANGE 테스트: cmdId=jobId 로 사용
 }
 
 public class ExecuteStepRequest

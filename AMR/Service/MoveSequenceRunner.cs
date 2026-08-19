@@ -36,21 +36,18 @@ public class MoveSequenceRunner
     private CancellationTokenSource? _demoCts;
     private Alarm? _abortAlarm;
 
-    // EXCHANGE 취소 처리 상태 (cancelCmd — docs/ACS-AMR_mqtt_exchangecmd.md 7장)
+    // cancelCmd 처리 플래그 (v0.3: 정지 → Idle 만, 복귀/ALARM 은 ACS 담당)
     private volatile bool _cancelRequested;
-    private string? _cancelReturnNode;
-    private volatile bool _exchangeLoaded;   // 매거진 탑재 여부 — C2/C3 판정 기준
 
     private const int MaxLogEntries = 200;
     private const int ArrivalTimeoutSeconds = 120;
     private const int CobotTimeoutSeconds = 60;
     private const int PollIntervalMs = 500;
 
-    /// <summary>교환 게이트 대기 중 경고 로그 주기 (초)</summary>
+    /// <summary>설비포트 actionCmd 대기 중 경고 로그 주기 (초) — v0.3 §4.2</summary>
     private const int GateWarnIntervalSeconds = 120;
 
-    /// <summary>교환 게이트(actionCmd) 대기 상한 (초). 0 = 무제한 (협의 #2 확정 전 기본값).
-    /// 상한 초과 시 ERR-116 + FAILED(32) 종결.</summary>
+    /// <summary>설비포트 actionCmd 대기 상한 (초). 0 = 무제한 (사양 v0.3 기본). 상한 초과 시 ERR-116 + FAILED(32).</summary>
     public int GateTimeoutSeconds { get; set; } = 0;
 
     public MoveSequenceRunner(
@@ -103,10 +100,11 @@ public class MoveSequenceRunner
         try
         {
             State.IsRunning = true;
-            State.IsExchange = false;
+            State.IsExchangeDocked = false;   // 새 moveCmd 는 도킹 대기 상태를 해제 (ACS 는 게이트 통과 후에만 다음 명령 발행)
             State.JobId = null;
             State.ErrorMessage = null;
             State.StartedAt = DateTime.Now;
+            _cancelRequested = false;
 
             // OPERATOR_ABORT / EXCHANGE_CANCEL_HOLD abnormal 은 운전자가 reset 으로 해제하는 것이
             // 정상 경로(IoModuleService.HandleResetSwitchAsync). 다만 그 과정 없이 새 job 이 들어오면
@@ -150,6 +148,15 @@ public class MoveSequenceRunner
                 return;
             }
 
+            // ★ v0.3 EXCHANGE 설비 구간: moveCmd(jobType=EXCHANGE, portType=EQP)
+            //   이동·도착(ARRIVED)·도킹 완료(COMPLETED) 후 종료하고, 설비 앞 대기 상태(ExchangeDocked)로 남는다.
+            //   이후 Cobot 작업은 ACS 가 보내는 actionCmd(type=UNLOAD|LOAD) 를 독립 명령으로 수행 (RunActionAsync).
+            if (IsExchangeJob(command))
+            {
+                await CompleteExchangeDockAsync(command, token);
+                return;
+            }
+
             // Step 5: WaitActionCmd
             await ExecuteStepInternalAsync(SequenceStep.WaitActionCmd, command, token);
 
@@ -170,12 +177,22 @@ public class MoveSequenceRunner
         }
         catch (OperationCanceledException)
         {
-            if (_abortAlarm is { } alarm)
+            if (_cancelRequested)
+            {
+                // cancelCmd (v0.3): 진행 중 명령 폐기 → 현 위치 정지 → Idle. 복귀/ALARM 은 ACS 가 처리.
+                await StopAmrSafeAsync();
+                State.CurrentStep = SequenceStep.Idle;
+                State.IsExchangeDocked = false;
+                AddLog(SequenceStep.Idle, $"cancelCmd 로 시퀀스 중단 — 정지 후 Idle (Job={State.JobId ?? command.CmdId})", true);
+                _logger.LogWarning("cancelCmd 로 시퀀스 중단 — Idle 복귀");
+            }
+            else if (_abortAlarm is { } alarm)
             {
                 State.CurrentStep = SequenceStep.Faulted;
                 State.ErrorMessage = $"[{alarm.Id}] {alarm.Name}";
                 AddLog(SequenceStep.Faulted, $"알람으로 시퀀스 중단: [{alarm.Id}] {alarm.Name}", true);
                 _logger.LogWarning("알람으로 시퀀스 중단: {AlarmId} {AlarmName}", alarm.Id, alarm.Name);
+                await PublishFailedSafeAsync(command, MapAlarmToResultCode(alarm), $"[{alarm.Id}] {alarm.Name}");
             }
             else
             {
@@ -190,11 +207,13 @@ public class MoveSequenceRunner
             State.ErrorMessage = ex.Message;
             AddLog(SequenceStep.Faulted, $"시퀀스 실패: {ex.Message}", true);
             _logger.LogError(ex, "시퀀스 실행 실패");
+            await PublishFailedSafeAsync(command, 99, ex.Message);
         }
         finally
         {
             State.IsRunning = false;
             _abortAlarm = null;
+            _cancelRequested = false;
             _sequenceCts?.Dispose();
             _sequenceCts = null;
             _runLock.Release();
@@ -416,6 +435,8 @@ public class MoveSequenceRunner
         State.JobType = command.JobType;
         State.PortType = command.PortType;
         State.AmrSlot = command.AmrSlot;
+        State.JobId = command.JobId ?? command.CmdId;   // v0.3: cmdId = jobId (MES JobID)
+        State.ExchangeModel = command.Model;
 
         AddLog(SequenceStep.MoveCmdReceived,
             $"MoveCmd 수신: NodeId={command.NodeId}, Port={command.Port ?? "없음"}, JobType={command.JobType ?? "없음"}, PortType={command.PortType ?? "없음"}, AmrSlot={command.AmrSlot}");
@@ -540,6 +561,8 @@ public class MoveSequenceRunner
         var arrivedReply = new CommandReply
         {
             CmdId = command.CmdId,
+            JobId = command.JobId ?? command.CmdId,
+            JobType = command.JobType,
             Status = "ARRIVED",
             ResultCode = 0,
             Message = $"AMR 도착: {command.NodeId}",
@@ -865,7 +888,7 @@ public class MoveSequenceRunner
     ///   둘 다 미검출 → 알람 ERR-112 + ACS abnormal 보고 + 시퀀스 abort
     /// 결정된 슬롯은 command.Port 에 반영 (LEFT/RIGHT) — 후속 처리/응답에서 동일 슬롯 참조.
     /// </summary>
-    private async Task PickFromMaterialPortWithDepthCheck(AmrCommand command, CancellationToken ct, bool exchangePickup = false)
+    private async Task PickFromMaterialPortWithDepthCheck(AmrCommand command, CancellationToken ct)
     {
         // 1) Slot 1 검사 위치 (DI20)
         AddLog(SequenceStep.CobotPickup, "자재포트 slot 1 검사 위치 이동 (DI20)");
@@ -905,18 +928,11 @@ public class MoveSequenceRunner
         AddLog(SequenceStep.CobotPickup,
             "자재포트 slot 1, 2 모두 매거진 없음 — 알람 발생, ACS 보고 후 시퀀스 중단", isError: true);
 
-        if (exchangePickup)
-        {
-            // EXCHANGE 픽업지 매거진 부재 — ERR-114 + FAILED(30, MAGAZINE_NOT_FOUND) 로 즉시 종결.
-            // 재시도 없음 (재교체는 MES 가 새 EXCHANGECMD 로 재요청 — 사양서 취소·오류 시트)
-            ReportAbnormalToAcs("MAGAZINE_NOT_FOUND", command.NodeId);
-            throw CreateAbortException(Alarm.PickupSourceMagazineNotFound,
-                $"픽업지({command.NodeId}) slot 1, 2 모두 매거진 없음 — MAGAZINE_NOT_FOUND");
-        }
-
-        ReportAbnormalToAcs("MATERIAL_PORT_EMPTY", "MATERIALPORT");
-        throw CreateAbortException(Alarm.MaterialPortEmpty,
-            "자재포트 slot 1, 2 모두 매거진 없음 — depth 검사 실패");
+        // v0.3: 픽업지(자재포트) 매거진 부재 — ERR-114 + FAILED(30, MAGAZINE_NOT_FOUND).
+        // ACS 는 EXCHANGE STEP=10 이면 즉시 종결(JOBREPORT COMPLETE+ErrorCode), 재시도 없음.
+        ReportAbnormalToAcs("MAGAZINE_NOT_FOUND", command.NodeId);
+        throw CreateAbortException(Alarm.PickupSourceMagazineNotFound,
+            $"픽업지({command.NodeId}) slot 1, 2 모두 매거진 없음 — MAGAZINE_NOT_FOUND");
     }
 
     /// <summary>
@@ -1082,7 +1098,9 @@ public class MoveSequenceRunner
         var reply = new CommandReply
         {
             CmdId = command.CmdId,
+            JobId = command.JobId ?? command.CmdId,
             JobType = command.JobType,
+            CarrierSlot = command.AmrSlot,
             Status = "COMPLETED",
             ResultCode = 0,
             Message = $"시퀀스 완료: {command.NodeId}",
@@ -1121,250 +1139,186 @@ public class MoveSequenceRunner
 
     #endregion
 
-    #region EXCHANGE 시퀀스 (docs/ACS-AMR_mqtt_exchangecmd.md)
+    #region EXCHANGE v0.3 (docs/ACS-AMR_mqtt_exchange_v0.3.docx)
+
+    /// <summary>moveCmd 가 EXCHANGE 설비 구간인지 — jobType=EXCHANGE</summary>
+    private static bool IsExchangeJob(AmrCommand c) =>
+        string.Equals(c.JobType, "EXCHANGE", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// EXCHANGE 전체 시퀀스 실행 (exchangeCmd 수신 시 호출).
-    /// 픽업지(신규 매거진) → 설비(회수/투입, actionCmd 2중 게이트) → 반납지(기존 매거진) → 홈.
-    /// 각 단계 완료 시 ACS 로 STEP_COMPLETE(step/stepName/carrierSlot) 보고.
+    /// EXCHANGE 설비 구간 완료 — ARRIVED(step 20) → 도킹 완료 COMPLETED → ExchangeDocked 대기.
+    /// 이후 actionCmd(type=UNLOAD|LOAD) 가 독립 명령으로 들어오면 RunActionAsync 가 처리한다.
     /// </summary>
-    public async Task RunExchangeSequenceAsync(AmrCommand command, CancellationToken ct)
+    private async Task CompleteExchangeDockAsync(AmrCommand command, CancellationToken ct)
+    {
+        // ARRIVED (권장) — ACS: RAIL-VEHICLEARRIVED, pose 판정과 OR
+        await _mqttService.PublishReplyAsync(new CommandReply
+        {
+            CmdId = command.CmdId,
+            JobId = command.JobId ?? command.CmdId,
+            JobType = command.JobType,
+            Status = "ARRIVED",
+            Step = 20,
+            StepName = "MOVE_TO_EQUIP",
+            ResultCode = 0,
+            Message = $"설비 도착: {command.NodeId}",
+            Timestamp = DateTime.UtcNow.ToString("o")
+        }, ct);
+        AddLog(SequenceStep.WaitArrival, $"보고: ARRIVED (step=20 MOVE_TO_EQUIP) — 설비 {command.NodeId}");
+
+        // 도킹 완료 COMPLETED — ACS 는 ACT(진행 중 actionCmd) 없는 COMPLETED 를 도킹 완료로 간주·무시
+        await _mqttService.PublishReplyAsync(new CommandReply
+        {
+            CmdId = command.CmdId,
+            JobId = command.JobId ?? command.CmdId,
+            JobType = command.JobType,
+            Status = "COMPLETED",
+            Step = 20,
+            StepName = "MOVE_TO_EQUIP",
+            ResultCode = 0,
+            Message = $"설비 도킹 완료 — actionCmd 대기: {command.NodeId}",
+            Timestamp = DateTime.UtcNow.ToString("o")
+        }, ct);
+
+        State.CurrentStep = SequenceStep.ExchangeDocked;
+        State.IsExchangeDocked = true;
+        State.LastActionType = null;
+        AddLog(SequenceStep.ExchangeDocked,
+            $"보고: COMPLETED (도킹) — 설비 앞 대기, actionCmd(type=UNLOAD→LOAD) 수신 대기 (Job={State.JobId})");
+    }
+
+    /// <summary>
+    /// actionCmd 독립 실행 (v0.3) — ExchangeDocked 상태에서 호출.
+    ///   type=UNLOAD: QR → 설비 OLD PICK(DI10/11) → AMR 회수슬롯(amrSlot 3|4) PLACE → COMPLETED(step 30)
+    ///   type=LOAD  : QR → AMR 투입슬롯(amrSlot 1|2) PICK → 설비 PLACE(DI8/9) → COMPLETED(step 40)
+    /// 작업 후에도 ExchangeDocked 유지 (다음 actionCmd / 다음 moveCmd 대기).
+    /// </summary>
+    public async Task RunActionAsync(AmrCommand action, CancellationToken ct)
     {
         if (!await _runLock.WaitAsync(0, ct))
         {
-            _logger.LogWarning("시퀀스 이미 실행 중 — exchangeCmd 무시 (Job={JobId})", command.JobId);
+            _logger.LogWarning("시퀀스 실행 중 — actionCmd 무시 (CmdId={CmdId})", action.CmdId);
             return;
         }
 
         _sequenceCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var token = _sequenceCts.Token;
         _cancelRequested = false;
-        _cancelReturnNode = null;
-        _exchangeLoaded = false;
 
-        // 설비 포트 슬롯 오프셋: LEFT=0, RIGHT=1
-        var portSlotOffset = string.Equals(command.Port, "RIGHT", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        // type 우선, 없으면 jobType (사양 §4)
+        var kind = (action.Type ?? action.JobType ?? "").ToUpperInvariant();
+        var isUnload = kind == "UNLOAD";
+        var port = action.Port ?? State.Port;
+        var model = action.Model ?? State.ExchangeModel;
+        var slot = Math.Clamp(action.AmrSlot, 1, 4);
+        var portSlotOffset = string.Equals(port, "RIGHT", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        var step = isUnload ? 30 : 40;
+        var stepName = isUnload ? "UNLOAD_OLD" : "LOAD_NEW";
+
+        // QR 판독·오프셋 보정용 — 설비포트 기준 명령 객체
+        var work = new AmrCommand
+        {
+            CmdId = action.CmdId,
+            NodeId = action.NodeId ?? State.NodeId ?? "",
+            Port = port,
+            JobType = isUnload ? "UNLOAD" : "LOAD",
+            PortType = "EQP",
+            Model = model,
+            AmrSlot = slot
+        };
 
         try
         {
             State.IsRunning = true;
-            State.IsExchange = true;
+            State.CurrentStep = SequenceStep.ExchangeAction;
+            State.StepStartedAt = DateTime.Now;
+            State.LastActionType = kind;
             State.ErrorMessage = null;
-            State.StartedAt = DateTime.Now;
-            State.CmdId = command.CmdId;
-            State.JobId = command.JobId;
-            State.NodeId = command.EquipNode;
-            State.Port = command.Port;
-            State.JobType = "EXCHANGE";
-            State.PortType = "EQP";
-            State.LoadSlot = command.LoadSlot;
-            State.UnloadSlot = command.UnloadSlot;
-            State.AmrSlot = command.LoadSlot;
 
-            // 잔류 latched abnormal 해제 (fallback — RunSequenceAsync 와 동일)
-            if (_ioModuleService.CurrentAbnormal?.Type is "OPERATOR_ABORT" or "EXCHANGE_CANCEL_HOLD")
+            AddLog(SequenceStep.ExchangeAction,
+                $"actionCmd 수락: type={kind}, port={port}, amrSlot={slot}, model={model ?? "-"} (Job={State.JobId})");
+
+            await _mqttService.PublishReplyAsync(new CommandReply
             {
-                _logger.LogInformation("새 exchange job 시작 — 잔류 {Type} abnormal 해제 (fallback)",
-                    _ioModuleService.CurrentAbnormal?.Type);
-                _ioModuleService.ClearAbnormal();
+                CmdId = action.CmdId, JobId = action.JobId ?? State.JobId, JobType = action.JobType ?? "EXCHANGE",
+                Status = "ACCEPTED", ResultCode = 0, Message = $"actionCmd 수락: {kind}",
+                Timestamp = DateTime.UtcNow.ToString("o")
+            }, token);
+
+            // QR 보정
+            await Step_CobotQrPosition(work, token);
+            await Step_CameraQrRead(work, token);
+
+            if (isUnload)
+            {
+                // OLD 취출: 회수슬롯은 비어 있어야 함 → 설비 PICK → AMR PLACE
+                VerifyAmrSlotState(slot, expectOccupied: false, SequenceStep.ExchangeAction);
+                await SendCobotCommandAndWaitAsync((ushort)(10 + portSlotOffset),
+                    $"설비포트 PICK slot {portSlotOffset + 1} (OLD 매거진)", token);
+                await SendCobotCommandAndWaitAsync((ushort)(4 + slot - 1),
+                    $"AMR PLACE slot {slot} (OLD 매거진, 회수슬롯)", token);
+            }
+            else
+            {
+                // NEW 투입: 투입슬롯에 매거진 있어야 함 → AMR PICK → 설비 PLACE
+                VerifyAmrSlotState(slot, expectOccupied: true, SequenceStep.ExchangeAction);
+                await SendCobotCommandAndWaitAsync((ushort)(0 + slot - 1),
+                    $"AMR PICK slot {slot} (NEW 매거진, 투입슬롯)", token);
+                await SendCobotCommandAndWaitAsync((ushort)(8 + portSlotOffset),
+                    $"설비포트 PLACE slot {portSlotOffset + 1} (NEW 매거진)", token);
             }
 
-            AddLog(SequenceStep.ExPickupNew,
-                $"ExchangeCmd 수신: Job={command.JobId}, 픽업={command.LoadSourceNode}, 설비={command.EquipNode}({command.Port}), " +
-                $"반납={command.UnloadDestNode}, 투입슬롯={command.LoadSlot}, 회수슬롯={command.UnloadSlot}, Model={command.Model ?? "-"}");
-
-            // ===== Phase A: PICKUP_NEW (Step 10) — 픽업지에서 신규 매거진 → AMR loadSlot =====
-            State.CurrentStep = SequenceStep.ExPickupNew;
-            State.StepStartedAt = DateTime.Now;
-
-            // ACCEPTED (→ ACS: JOBREPORT RECEIVE, Step=10)
-            await PublishExchangeReplyAsync(command, "ACCEPTED", 10, "PICKUP_NEW", null, 0,
-                $"교환 명령 수락: Job={command.JobId}", token);
-
-            // EXECUTING (→ ACS: JOBREPORT START, Step=10)
-            await PublishExchangeReplyAsync(command, "EXECUTING", 10, "PICKUP_NEW", null, 0,
-                $"픽업지 이동 시작: {command.LoadSourceNode}", token);
-
-            var pickupCmd = new AmrCommand
+            // COMPLETED (step/carrierSlot 포함 — ACS: ACT=UNLOAD→STEP 30, ACT=LOAD→STEP 40)
+            await _mqttService.PublishReplyAsync(new CommandReply
             {
-                CmdId = command.CmdId,
-                NodeId = command.LoadSourceNode ?? "",
-                JobType = "UNLOAD",   // 포트에서 집어 AMR 에 싣는 동작 — 오프셋/QR 은 UNLOAD 기준
-                PortType = command.LoadSourcePortType ?? "MATERIAL",
-                Model = command.Model
-            };
+                CmdId = action.CmdId, JobId = action.JobId ?? State.JobId, JobType = action.JobType ?? "EXCHANGE",
+                Status = "COMPLETED", Step = step, StepName = stepName, CarrierSlot = slot,
+                ResultCode = 0, Message = isUnload ? $"OLD magazine retrieved (slot {slot})" : $"NEW magazine loaded (slot {slot})",
+                Timestamp = DateTime.UtcNow.ToString("o")
+            }, token);
+            AddLog(SequenceStep.ExchangeAction, $"보고: COMPLETED (step={step} {stepName}, carrierSlot={slot})");
 
-            State.CurrentNodeId = null;
-            await MoveToNodeAndWaitAsync(pickupCmd.NodeId, SequenceStep.ExPickupNew, token);
-            await Step_CobotQrPosition(pickupCmd, token);            // DI17 (자재포트 QR)
-            await Step_CameraQrRead(pickupCmd, token);
-
-            // 픽업지 슬롯 1→2 depth 탐색 후 PICK — 둘 다 없으면 ERR-114 + FAILED(30)
-            await PickFromMaterialPortWithDepthCheck(pickupCmd, token, exchangePickup: true);
-
-            // AMR loadSlot(1|2) 에 PLACE — 사전 빈 슬롯 검증
-            VerifyAmrSlotState(command.LoadSlot, expectOccupied: false, SequenceStep.ExPickupNew);
-            await SendCobotCommandAndWaitAsync((ushort)(4 + command.LoadSlot - 1),
-                $"AMR PLACE slot {command.LoadSlot} (신규 매거진)", token);
-
-            _exchangeLoaded = true;
-            AddLog(SequenceStep.ExPickupNew, $"신규 매거진 적재 완료 → AMR slot {command.LoadSlot}");
-
-            // ===== Phase B: MOVE_TO_EQUIP (Step 20) =====
-            State.CurrentStep = SequenceStep.ExMoveToEquip;
-            State.StepStartedAt = DateTime.Now;
-
-            await SendCobotCommandAndWaitAsync(25, "Home (이동 전 안전 자세)", token);
-            State.CurrentNodeId = null;
-            await MoveToNodeAndWaitAsync(command.EquipNode ?? "", SequenceStep.ExMoveToEquip, token);
-
-            // ARRIVED (→ ACS: JOBREPORT ARRIVED, Step=20)
-            await PublishExchangeReplyAsync(command, "ARRIVED", 20, "MOVE_TO_EQUIP", null, 0,
-                $"설비 도착: {command.EquipNode}", token);
-
-            // ===== 게이트1: 기존 매거진 취출 허가 (actionCmd type=UNLOAD) =====
-            State.CurrentStep = SequenceStep.ExWaitUnloadPermit;
-            State.StepStartedAt = DateTime.Now;
-            await WaitExchangeGateAsync(command, "UNLOAD", token);
-
-            // ===== Phase C: UNLOAD_OLD (Step 30) — 설비 → AMR unloadSlot =====
-            State.CurrentStep = SequenceStep.ExUnloadOld;
-            State.StepStartedAt = DateTime.Now;
-
-            var unloadCmd = new AmrCommand
-            {
-                CmdId = command.CmdId,
-                NodeId = command.EquipNode ?? "",
-                Port = command.Port,
-                JobType = "UNLOAD",
-                PortType = "EQP",
-                Model = command.Model
-            };
-            await Step_CobotQrPosition(unloadCmd, token);            // DI16 (설비포트 QR)
-            await Step_CameraQrRead(unloadCmd, token);
-
-            VerifyAmrSlotState(command.UnloadSlot, expectOccupied: false, SequenceStep.ExUnloadOld);
-            await SendCobotCommandAndWaitAsync((ushort)(10 + portSlotOffset),
-                $"설비포트 PICK slot {portSlotOffset + 1} (기존 매거진)", token);
-            await SendCobotCommandAndWaitAsync((ushort)(4 + command.UnloadSlot - 1),
-                $"AMR PLACE slot {command.UnloadSlot} (기존 매거진)", token);
-
-            await PublishExchangeReplyAsync(command, "STEP_COMPLETE", 30, "UNLOAD_OLD", command.UnloadSlot, 0,
-                $"기존 매거진 회수 완료 (슬롯{command.UnloadSlot})", token);
-
-            // ===== 게이트2: 신규 매거진 투입 허가 (actionCmd type=LOAD) =====
-            State.CurrentStep = SequenceStep.ExWaitLoadPermit;
-            State.StepStartedAt = DateTime.Now;
-            await WaitExchangeGateAsync(command, "LOAD", token);
-
-            // ===== Phase D: LOAD_NEW (Step 40) — AMR loadSlot → 설비 =====
-            State.CurrentStep = SequenceStep.ExLoadNew;
-            State.StepStartedAt = DateTime.Now;
-
-            var loadCmd = new AmrCommand
-            {
-                CmdId = command.CmdId,
-                NodeId = command.EquipNode ?? "",
-                Port = command.Port,
-                JobType = "LOAD",   // LOAD 모델 오프셋 재산출을 위해 QR 재판독
-                PortType = "EQP",
-                Model = command.Model,
-                AmrSlot = command.LoadSlot
-            };
-            await Step_CobotQrPosition(loadCmd, token);              // DI16 재이동
-            await Step_CameraQrRead(loadCmd, token);
-
-            VerifyAmrSlotState(command.LoadSlot, expectOccupied: true, SequenceStep.ExLoadNew);
-            await SendCobotCommandAndWaitAsync((ushort)(0 + command.LoadSlot - 1),
-                $"AMR PICK slot {command.LoadSlot} (신규 매거진)", token);
-            await SendCobotCommandAndWaitAsync((ushort)(8 + portSlotOffset),
-                $"설비포트 PLACE slot {portSlotOffset + 1} (신규 매거진)", token);
-
-            await PublishExchangeReplyAsync(command, "STEP_COMPLETE", 40, "LOAD_NEW", command.LoadSlot, 0,
-                $"신규 매거진 투입 완료 (슬롯{command.LoadSlot})", token);
-
-            // ===== Phase E: RETURN_OLD (Step 50) — AMR unloadSlot → 반납지 =====
-            State.CurrentStep = SequenceStep.ExReturnOld;
-            State.StepStartedAt = DateTime.Now;
-
-            await SendCobotCommandAndWaitAsync(25, "Home (이동 전 안전 자세)", token);
-            State.CurrentNodeId = null;
-            await MoveToNodeAndWaitAsync(command.UnloadDestNode ?? "", SequenceStep.ExReturnOld, token);
-
-            var returnCmd = new AmrCommand
-            {
-                CmdId = command.CmdId,
-                NodeId = command.UnloadDestNode ?? "",
-                JobType = "LOAD",   // AMR 에서 집어 포트에 놓는 동작 — 오프셋/QR 은 LOAD 기준
-                PortType = command.UnloadDestPortType ?? "MATERIAL",
-                Model = command.Model,
-                AmrSlot = command.UnloadSlot
-            };
-            await Step_CobotQrPosition(returnCmd, token);            // DI17 (자재포트 QR)
-            await Step_CameraQrRead(returnCmd, token);
-
-            VerifyAmrSlotState(command.UnloadSlot, expectOccupied: true, SequenceStep.ExReturnOld);
-            // 반납지 빈 슬롯 탐색 (DI22/23 → returnCmd.Port 결정, 둘 다 점유 시 ERR-113)
-            await FindEmptyMaterialPortSlotForPlace(returnCmd, token);
-            await SendCobotCommandAndWaitAsync((ushort)(0 + command.UnloadSlot - 1),
-                $"AMR PICK slot {command.UnloadSlot} (기존 매거진)", token);
-
-            var retSlotOffset = string.Equals(returnCmd.Port, "RIGHT", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-            await SendCobotCommandAndWaitAsync((ushort)(12 + retSlotOffset),
-                $"자재포트 PLACE slot {retSlotOffset + 1} (기존 매거진 반납)", token);
-
-            _exchangeLoaded = false;
-            await PublishExchangeReplyAsync(command, "STEP_COMPLETE", 50, "RETURN_OLD", command.UnloadSlot, 0,
-                $"기존 매거진 반납 완료: {command.UnloadDestNode}", token);
-
-            // ===== Phase F: DONE (Step 60) =====
-            State.CurrentStep = SequenceStep.ExComplete;
-            State.StepStartedAt = DateTime.Now;
-
-            await SendCobotCommandAndWaitAsync(25, "Home 위치 이동", token);
-            await PublishExchangeReplyAsync(command, "COMPLETED", 60, "DONE", null, 0,
-                $"교환 작업 완료: Job={command.JobId}", token);
-
-            State.CurrentStep = SequenceStep.Idle;
-            AddLog(SequenceStep.ExComplete, "교환 시퀀스 완료 — Idle 복귀");
+            // 설비 앞 대기 유지
+            State.CurrentStep = SequenceStep.ExchangeDocked;
+            State.IsExchangeDocked = true;
+            AddLog(SequenceStep.ExchangeDocked, "actionCmd 완료 — 설비 앞 대기 (다음 actionCmd/moveCmd 수신 대기)");
         }
         catch (OperationCanceledException)
         {
             if (_cancelRequested)
             {
-                // cancelCmd 에 의한 취소 — C2/C3 처리 (응답 CANCELED 는 MainSequenceService 가 이미 전송)
-                await HandleExchangeCancelAsync(command, ct);
+                await StopAmrSafeAsync();
+                State.CurrentStep = SequenceStep.Idle;
+                State.IsExchangeDocked = false;
+                AddLog(SequenceStep.Idle, "cancelCmd 로 actionCmd 중단 — 정지 후 Idle", true);
             }
             else if (_abortAlarm is { } alarm)
             {
-                var failedStep = State.CurrentStep;   // Faulted 전환 전 실패 시점 단계 보존
                 State.CurrentStep = SequenceStep.Faulted;
+                State.IsExchangeDocked = false;
                 State.ErrorMessage = $"[{alarm.Id}] {alarm.Name}";
-                AddLog(SequenceStep.Faulted, $"알람으로 교환 시퀀스 중단: [{alarm.Id}] {alarm.Name}", true);
-                _logger.LogWarning("알람으로 교환 시퀀스 중단: {AlarmId} {AlarmName}", alarm.Id, alarm.Name);
-                await PublishExchangeFailedSafeAsync(command, failedStep, MapAlarmToResultCode(alarm),
-                    $"[{alarm.Id}] {alarm.Name}");
+                AddLog(SequenceStep.Faulted, $"알람으로 actionCmd 중단: [{alarm.Id}] {alarm.Name}", true);
+                await PublishFailedSafeAsync(action, MapAlarmToResultCode(alarm), $"[{alarm.Id}] {alarm.Name}", step, stepName);
             }
             else
             {
-                AddLog(State.CurrentStep, "교환 시퀀스 취소됨", true);
                 State.CurrentStep = SequenceStep.Idle;
-                _logger.LogWarning("교환 시퀀스 취소됨");
+                State.IsExchangeDocked = false;
+                AddLog(SequenceStep.Idle, "actionCmd 취소됨", true);
             }
         }
         catch (Exception ex)
         {
-            var failedStep = State.CurrentStep;   // Faulted 전환 전 실패 시점 단계 보존
             State.CurrentStep = SequenceStep.Faulted;
+            State.IsExchangeDocked = false;
             State.ErrorMessage = ex.Message;
-            AddLog(SequenceStep.Faulted, $"교환 시퀀스 실패: {ex.Message}", true);
-            _logger.LogError(ex, "교환 시퀀스 실행 실패 (Job={JobId})", command.JobId);
-            await PublishExchangeFailedSafeAsync(command, failedStep, 99, ex.Message);
+            AddLog(SequenceStep.Faulted, $"actionCmd 실패: {ex.Message}", true);
+            _logger.LogError(ex, "actionCmd 실행 실패 (CmdId={CmdId})", action.CmdId);
+            await PublishFailedSafeAsync(action, 99, ex.Message, step, stepName);
         }
         finally
         {
             State.IsRunning = false;
-            State.IsExchange = false;
             _abortAlarm = null;
             _cancelRequested = false;
             _sequenceCts?.Dispose();
@@ -1374,209 +1328,81 @@ public class MoveSequenceRunner
     }
 
     /// <summary>
-    /// cancelCmd 처리 — 실행 중인 교환 Job 과 jobId 일치 시 취소 요청.
-    /// 반환: 수용 여부 (false = C4 거부: 미실행/불일치 → CANCEL_REJECTED)
+    /// cancelCmd (v0.3) — 진행 중 명령 폐기 → 정지 → Idle. 반환: 수용 여부 (false = C4: 미진행/jobId 불일치).
+    /// 실행 중(IsRunning)이면 토큰 취소로 시퀀스가 정리하고, 도킹 대기(ExchangeDocked) 상태면 즉시 Idle.
     /// </summary>
-    public bool RequestCancel(string jobId, string? returnNode)
+    public bool RequestCancel(string jobId)
     {
-        if (!State.IsRunning || !State.IsExchange ||
-            !string.Equals(State.JobId, jobId, StringComparison.OrdinalIgnoreCase))
-            return false;
+        var current = State.JobId;
+        var match = !string.IsNullOrWhiteSpace(current) &&
+                    string.Equals(current, jobId, StringComparison.OrdinalIgnoreCase);
 
-        _cancelReturnNode = returnNode;
-        _cancelRequested = true;
-        _sequenceCts?.Cancel();
-        AddLog(State.CurrentStep, $"취소 요청 접수 (Job={jobId}, 복귀노드={returnNode ?? "미지정"})", true);
-        _logger.LogWarning("교환 Job 취소 요청 접수: Job={JobId}, ReturnNode={ReturnNode}", jobId, returnNode);
-        return true;
-    }
-
-    /// <summary>
-    /// 취소 후속 처리 (판정표 C2/C3):
-    ///   C2 (픽업 전, 매거진 미탑재): AMR 정지 → Idle 복귀
-    ///   C3 (적재 후): AMR 정지 → 복귀 노드 이동 → abnormal 300 + ALARM 상태(작업자 조치 대기)
-    /// </summary>
-    private async Task HandleExchangeCancelAsync(AmrCommand command, CancellationToken ct)
-    {
-        var loaded = _exchangeLoaded;
-        AddLog(State.CurrentStep, $"취소 처리 시작 — {(loaded ? "적재 후(C3)" : "픽업 전(C2)")} (Job={command.JobId})", true);
-
-        // 진행 중 AMR 주행 정지 (best effort)
-        try { await _amrService.SetExecutionControlAsync(ExecutionControl.Stop, ct); }
-        catch (Exception ex) { _logger.LogWarning(ex, "취소 처리 — AMR 정지 실패"); }
-
-        if (!loaded)
+        if (State.IsRunning && match)
         {
-            // C2: 즉시 취소 종결
-            State.CurrentStep = SequenceStep.Idle;
-            AddLog(SequenceStep.Idle, "취소(C2) 완료 — Idle 복귀");
-            return;
+            _cancelRequested = true;
+            _sequenceCts?.Cancel();
+            AddLog(State.CurrentStep, $"cancelCmd 접수 — 진행 중 명령 폐기 (Job={jobId})", true);
+            return true;
         }
 
-        // C3: 코봇 안전 자세 → 복귀 노드 이동 → ALARM 상태
-        try { await SendCobotCommandAndWaitAsync(25, "Home (취소 복귀 전 안전 자세)", ct); }
+        if (State.IsExchangeDocked && match)
+        {
+            State.IsExchangeDocked = false;
+            State.CurrentStep = SequenceStep.Idle;
+            State.JobId = null;
+            AddLog(SequenceStep.Idle, $"cancelCmd 접수 — 도킹 대기 해제 → Idle (Job={jobId})", true);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>취소 시 AMR 정지 (best effort)</summary>
+    private async Task StopAmrSafeAsync()
+    {
+        if (_simulator.Enabled) { _simulator.EndMove(null, null, null); return; }
+        try { await _amrService.SetExecutionControlAsync(ExecutionControl.Stop, CancellationToken.None); }
+        catch (Exception ex) { _logger.LogWarning(ex, "취소 처리 — AMR 정지 실패"); }
+    }
+
+    /// <summary>FAILED reply — 시퀀스 토큰이 취소된 뒤에도 발행되도록 CancellationToken.None</summary>
+    private async Task PublishFailedSafeAsync(AmrCommand command, int resultCode, string message,
+        int? step = null, string? stepName = null)
+    {
+        try
+        {
+            await _mqttService.PublishReplyAsync(new CommandReply
+            {
+                CmdId = command.CmdId,
+                JobId = command.JobId ?? State.JobId ?? command.CmdId,
+                JobType = command.JobType,
+                Status = "FAILED",
+                Step = step,
+                StepName = stepName,
+                CarrierSlot = command.AmrSlot,
+                ResultCode = resultCode,
+                Message = message,
+                Timestamp = DateTime.UtcNow.ToString("o")
+            }, CancellationToken.None);
+            AddLog(State.CurrentStep, $"보고: FAILED (resultCode={resultCode}) — {message}", true);
+        }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "취소 처리 — Cobot Home 이동 실패, 복귀 계속 진행");
-            AddLog(SequenceStep.CancelHold, $"Cobot Home 이동 실패: {ex.Message} — 복귀 계속", true);
+            _logger.LogWarning(ex, "FAILED 보고 발행 실패 (CmdId={CmdId})", command.CmdId);
         }
-
-        var returnNode = _cancelReturnNode;
-        if (!string.IsNullOrWhiteSpace(returnNode))
-        {
-            try
-            {
-                State.CurrentNodeId = null;
-                State.CurrentStep = SequenceStep.CancelHold;
-                State.StepStartedAt = DateTime.Now;
-                await MoveToNodeAndWaitAsync(returnNode!, SequenceStep.CancelHold, ct);
-                AddLog(SequenceStep.CancelHold, $"취소 복귀 완료: {returnNode}");
-            }
-            catch (Exception ex)
-            {
-                AddLog(SequenceStep.CancelHold, $"취소 복귀 이동 실패: {ex.Message} — 현재 위치에서 대기", true);
-                _logger.LogWarning(ex, "취소 복귀 이동 실패 (ReturnNode={ReturnNode})", returnNode);
-            }
-        }
-        else
-        {
-            AddLog(SequenceStep.CancelHold, "복귀 노드 미지정 — 현재 위치에서 작업자 조치 대기", true);
-        }
-
-        // abnormal 300 보고 (latched — Reset 짧게 눌러 해제, 새 Job 시작 시 fallback 해제)
-        ReportAbnormalToAcs("EXCHANGE_CANCEL_HOLD", returnNode ?? State.CurrentNodeId ?? "AMR");
-
-        // Faulted 상태로 전환 → 경광등 Red + 부저 (SignalTowerService 가 Faulted 기준으로 표시)
-        State.CurrentStep = SequenceStep.Faulted;
-        State.ErrorMessage = "[300] EXCHANGE_CANCEL_HOLD — 탑재 매거진 회수 후 Reset(짧게)으로 해제";
-        AddLog(SequenceStep.CancelHold,
-            $"취소(C3) 처리 완료 — 작업자 조치 대기 (슬롯{command.LoadSlot}/{command.UnloadSlot} 매거진 회수 → Reset)", true);
     }
+
+    /// <summary>알람 → resultCode (사양 §6)</summary>
+    private static int MapAlarmToResultCode(Alarm alarm) => alarm.Code switch
+    {
+        112 or 114 => 30,                 // MAGAZINE_NOT_FOUND (자재포트 비어있음 / 픽업지 부재)
+        110 or 111 or 113 or 115 => 31,   // 슬롯/센서 상태 불일치
+        116 => 32,                        // 게이트 대기 상한 초과
+        _ => 99
+    };
 
     /// <summary>
-    /// 교환 게이트 대기 — actionCmd(type=UNLOAD|LOAD, jobId 일치) 수신까지 대기.
-    /// 기본 무제한 대기 + 주기 경고 로그. GateTimeoutSeconds 설정 시 상한 초과 → ERR-116 + FAILED(32).
-    /// </summary>
-    private async Task WaitExchangeGateAsync(AmrCommand command, string expectedType, CancellationToken ct)
-    {
-        var gateName = string.Equals(expectedType, "UNLOAD", StringComparison.OrdinalIgnoreCase)
-            ? "게이트1(기존 매거진 취출 허가)"
-            : "게이트2(신규 매거진 투입 허가)";
-
-        AddLog(State.CurrentStep,
-            $"{gateName} — actionCmd(type={expectedType}) 대기 시작" +
-            (GateTimeoutSeconds > 0 ? $" (상한 {GateTimeoutSeconds}초)" : " (무제한)"));
-
-        var started = DateTime.Now;
-        var lastWarn = DateTime.Now;
-
-        while (!ct.IsCancellationRequested)
-        {
-            if (GateTimeoutSeconds > 0 && (DateTime.Now - started).TotalSeconds > GateTimeoutSeconds)
-            {
-                throw CreateAbortException(Alarm.ActionCmdWaitTimeout,
-                    $"{gateName} 대기 상한 {GateTimeoutSeconds}초 초과");
-            }
-
-            if ((DateTime.Now - lastWarn).TotalSeconds >= GateWarnIntervalSeconds)
-            {
-                AddLog(State.CurrentStep,
-                    $"{gateName} 대기 중 — 경과 {(DateTime.Now - started).TotalSeconds:F0}초 (설비 준비신호 대기)");
-                lastWarn = DateTime.Now;
-            }
-
-            if (_mqttService.TryDequeueActionCmd(out var actionCmd))
-            {
-                var typeOk = string.Equals(actionCmd.Type, expectedType, StringComparison.OrdinalIgnoreCase);
-                // jobId 없는 actionCmd 는 테스트 주입(Web UI) 편의상 허용
-                var jobOk = string.IsNullOrWhiteSpace(actionCmd.JobId) ||
-                            string.Equals(actionCmd.JobId, command.JobId, StringComparison.OrdinalIgnoreCase);
-
-                if (typeOk && jobOk)
-                {
-                    AddLog(State.CurrentStep, $"{gateName} 허가 수신 (CmdId={actionCmd.CmdId})");
-                    return;
-                }
-
-                AddLog(State.CurrentStep,
-                    $"actionCmd 무시 — type={actionCmd.Type ?? "없음"}, jobId={actionCmd.JobId ?? "없음"} " +
-                    $"(기대: type={expectedType}, jobId={command.JobId})", true);
-            }
-
-            await Task.Delay(PollIntervalMs, ct);
-        }
-
-        ct.ThrowIfCancellationRequested();
-    }
-
-    /// <summary>지정 노드로 AMR 이동 후 도착 대기 (매핑 조회 → Task/Job 기록 → Start → Started→Stopped 확인).
-    /// 시뮬레이션 모드에서는 웹 '동작 완료(도착)' 확인으로 대체.</summary>
-    private async Task MoveToNodeAndWaitAsync(string nodeId, SequenceStep logStep, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(nodeId))
-            throw new InvalidOperationException("이동 대상 NodeId 가 비어 있습니다.");
-
-        if (_simulator.Enabled)
-        {
-            await SimulateMoveAsync(nodeId, logStep, ct);
-            return;
-        }
-
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var mapping = await db.LocationTagMappings
-            .FirstOrDefaultAsync(m => m.LocationTag == nodeId, ct)
-            ?? throw new InvalidOperationException($"위치 태그 매핑 없음: {nodeId}");
-
-        await _amrService.SetTaskIndexAsync((ushort)mapping.TaskIndex, ct);
-        await _amrService.SetJobIndexAsync((ushort)mapping.JobIndex, ct);
-        await _amrService.SetExecutionControlAsync(ExecutionControl.Start, ct);
-        AddLog(logStep, $"AMR 이동 명령: {nodeId} → Task={mapping.TaskIndex}, Job={mapping.JobIndex}");
-
-        var deadline = DateTime.Now.AddSeconds(ArrivalTimeoutSeconds);
-
-        // Phase 1: 이동 시작 확인 (Started)
-        while (!ct.IsCancellationRequested)
-        {
-            if (DateTime.Now > deadline)
-                throw new TimeoutException($"AMR 이동 시작 대기 타임아웃 ({ArrivalTimeoutSeconds}초): {nodeId}");
-
-            var status = await _amrService.ReadStatusAsync(ct);
-            if (status.RobotState == RobotState.Started)
-            {
-                AddLog(logStep, "AMR 이동 시작 확인 (RobotState=Started)");
-                break;
-            }
-            await Task.Delay(PollIntervalMs, ct);
-        }
-
-        ct.ThrowIfCancellationRequested();
-
-        // Phase 2: 도착 확인 (Stopped)
-        while (!ct.IsCancellationRequested)
-        {
-            var status = await _amrService.ReadStatusAsync(ct);
-            if (status.RobotState == RobotState.Stopped)
-            {
-                State.CurrentNodeId = nodeId;
-                try
-                {
-                    var pose = await _amrService.ReadPoseAsync(ct);
-                    AddLog(logStep, $"AMR 도착 완료 ({nodeId}, Pose=({pose.X:F1}, {pose.Y:F1}, {pose.Angle:F1}°))");
-                }
-                catch
-                {
-                    AddLog(logStep, $"AMR 도착 완료 ({nodeId})");
-                }
-                return;
-            }
-            await Task.Delay(PollIntervalMs, ct);
-        }
-
-        ct.ThrowIfCancellationRequested();
-    }
-
-    /// <summary>
-    /// AMR 슬롯 상태 검증 (교환 슬롯 고정 정책) — 기대와 불일치 시 ERR-115 + FAILED(31).
+    /// AMR 슬롯 상태 검증 — 기대와 불일치 시 ERR-115 + FAILED(31).
     /// expectOccupied=false: 빈 슬롯이어야 함 (PLACE 전) / true: 매거진 있어야 함 (PICK 전)
     /// </summary>
     private void VerifyAmrSlotState(int slot, bool expectOccupied, SequenceStep logStep)
@@ -1594,22 +1420,16 @@ public class MoveSequenceRunner
             var inputs = _ioModuleService.CurrentInputs
                 ?? throw CreateAbortException(Alarm.ExchangeSlotStateMismatch,
                     $"AMR slot {slot} 상태 검증 실패 — I/O 모듈 입력 미수신");
-
             occupied = slot switch
             {
-                1 => inputs.MzDetect1,
-                2 => inputs.MzDetect2,
-                3 => inputs.MzDetect3,
-                4 => inputs.MzDetect4,
-                _ => false
+                1 => inputs.MzDetect1, 2 => inputs.MzDetect2, 3 => inputs.MzDetect3, 4 => inputs.MzDetect4, _ => false
             };
         }
 
         if (occupied != expectOccupied)
         {
             AddLog(logStep,
-                $"AMR slot {slot} 상태 불일치 — 기대: {(expectOccupied ? "매거진 있음" : "빈 슬롯")}, " +
-                $"실제: {(occupied ? "매거진 있음" : "빈 슬롯")}", true);
+                $"AMR slot {slot} 상태 불일치 — 기대: {(expectOccupied ? "매거진 있음" : "빈 슬롯")}, 실제: {(occupied ? "매거진 있음" : "빈 슬롯")}", true);
             ReportAbnormalToAcs("EXCHANGE_SLOT_MISMATCH", $"PORT{slot}");
             throw CreateAbortException(Alarm.ExchangeSlotStateMismatch,
                 $"AMR slot {slot} 기대={(expectOccupied ? "점유" : "빈")} 실제={(occupied ? "점유" : "빈")}");
@@ -1617,79 +1437,6 @@ public class MoveSequenceRunner
 
         AddLog(logStep, $"AMR slot {slot} 상태 확인 OK ({(expectOccupied ? "매거진 있음" : "빈 슬롯")})");
     }
-
-    /// <summary>교환 단계 보고 발행 (jobId/step/stepName/carrierSlot 포함)</summary>
-    private async Task PublishExchangeReplyAsync(AmrCommand command, string status, int step, string stepName,
-        int? carrierSlot, int resultCode, string message, CancellationToken ct)
-    {
-        var reply = new CommandReply
-        {
-            CmdId = command.CmdId,
-            JobId = command.JobId,
-            JobType = "EXCHANGE",
-            Status = status,
-            Step = step,
-            StepName = stepName,
-            CarrierSlot = carrierSlot,
-            ResultCode = resultCode,
-            Message = message,
-            Timestamp = DateTime.UtcNow.ToString("o")
-        };
-        await _mqttService.PublishReplyAsync(reply, ct);
-        AddLog(State.CurrentStep,
-            $"보고: {status} (step={step} {stepName}{(carrierSlot is int s ? $", slot={s}" : "")})");
-    }
-
-    /// <summary>실패 종결 보고 — 시퀀스 토큰이 이미 취소된 상태에서도 발행되도록 CancellationToken.None 사용</summary>
-    private async Task PublishExchangeFailedSafeAsync(AmrCommand command, SequenceStep failedStep, int resultCode, string message)
-    {
-        try
-        {
-            await PublishExchangeReplyAsync(command, "FAILED", StepCodeOf(failedStep), StepNameOf(failedStep),
-                null, resultCode, message, CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "교환 FAILED 보고 발행 실패 (Job={JobId})", command.JobId);
-        }
-    }
-
-    /// <summary>알람 → resultCode 매핑 (docs/ACS-AMR_mqtt_exchangecmd.md 8.1)</summary>
-    private static int MapAlarmToResultCode(Alarm alarm) => alarm.Code switch
-    {
-        114 => 30,   // MAGAZINE_NOT_FOUND
-        115 => 31,   // 슬롯/센서 상태 불일치
-        116 => 32,   // 게이트 대기 상한 초과
-        _ => 99
-    };
-
-    /// <summary>교환 내부 단계 → MES Step 코드</summary>
-    private static int StepCodeOf(SequenceStep step) => step switch
-    {
-        SequenceStep.ExPickupNew => 10,
-        SequenceStep.ExMoveToEquip => 20,
-        SequenceStep.ExWaitUnloadPermit => 20,
-        SequenceStep.ExUnloadOld => 30,
-        SequenceStep.ExWaitLoadPermit => 30,
-        SequenceStep.ExLoadNew => 40,
-        SequenceStep.ExReturnOld => 50,
-        SequenceStep.ExComplete => 60,
-        _ => 0
-    };
-
-    /// <summary>교환 내부 단계 → MES StepName</summary>
-    private static string StepNameOf(SequenceStep step) => step switch
-    {
-        SequenceStep.ExPickupNew => "PICKUP_NEW",
-        SequenceStep.ExMoveToEquip => "MOVE_TO_EQUIP",
-        SequenceStep.ExWaitUnloadPermit => "MOVE_TO_EQUIP",
-        SequenceStep.ExUnloadOld => "UNLOAD_OLD",
-        SequenceStep.ExWaitLoadPermit => "UNLOAD_OLD",
-        SequenceStep.ExLoadNew => "LOAD_NEW",
-        SequenceStep.ExReturnOld => "RETURN_OLD",
-        SequenceStep.ExComplete => "DONE",
-        _ => "UNKNOWN"
-    };
 
     #endregion
 

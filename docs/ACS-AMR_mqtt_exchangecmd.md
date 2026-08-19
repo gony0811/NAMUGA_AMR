@@ -1,3 +1,7 @@
+> **⚠️ 폐기 (2026-08-19):** 본 v0.2 `exchangeCmd` 단일 명령 모델은 폐기되었습니다.
+> 현행 사양은 **`docs/ACS-AMR_mqtt_exchange_v0.3.docx`** (ACS 구간별 moveCmd/actionCmd 오케스트레이션) 이며,
+> AMR 구현도 v0.3 기준으로 변경되었습니다 (exchangeCmd 미지원 → REJECTED 2). 이 문서는 이력 참고용으로만 보관합니다.
+
 # ACS-AMR MQTT exchangeCmd 인터페이스 정의서 (초안)
 
 | 항목 | 내용 |
