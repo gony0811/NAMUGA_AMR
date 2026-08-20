@@ -997,72 +997,19 @@ public class MoveSequenceRunner
         }
         else
         {
-            // UNLOAD: AMR 에 PLACE — 자동 빈 슬롯 선택 (1→2→3→4)
-            //   1번부터 차례로 검사해서 가장 먼저 비어있는 슬롯(센서 OFF)에 놓음
-            //   4 슬롯 모두 가득 차있으면 알람 발생 + ACS 보고 후 시퀀스 중단
-            var selectedSlot = SelectEmptyAmrSlot();
+            // UNLOAD: AMR 에 PLACE — v0.3: ACS 가 지정한 amrSlot(투입슬롯 1|2) 사용.
+            //   자동 선택(1→4) 은 폐지 — 슬롯 배정 주체는 ACS (사양 §7-5), 용도 규칙은 수락 검증에서 강제.
+            //   지정 슬롯이 점유 상태면 ERR-115 + FAILED(31).
+            var targetSlot = Math.Clamp(command.AmrSlot, 1, 4);
+            VerifyAmrSlotState(targetSlot, expectOccupied: false, SequenceStep.CobotPlace);
 
-            // 선택된 슬롯을 command.AmrSlot 에 반영 — 후속 단계/로그/응답에서 동일 슬롯 참조
-            command.AmrSlot = selectedSlot;
-
-            var amrSlotOffset = selectedSlot - 1;
-            placeDiIndex = (ushort)(4 + amrSlotOffset);
-            placeTarget = $"AMR PLACE slot {selectedSlot} (자동 선택)";
+            placeDiIndex = (ushort)(4 + targetSlot - 1);
+            placeTarget = $"AMR PLACE slot {targetSlot} (지정 슬롯)";
         }
 
         AddLog(SequenceStep.CobotPlace, $"PLACE 시작 (DI{placeDiIndex}, {placeTarget})");
         await SendCobotCommandAndWaitAsync(placeDiIndex, $"PLACE ({placeTarget})", ct);
         AddLog(SequenceStep.CobotPlace, "PLACE 완료");
-    }
-
-    /// <summary>
-    /// UNLOAD 시 AMR 에 PLACE 할 빈 슬롯을 1→2→3→4 순서로 찾는다.
-    /// 모두 차있으면 알람 + ACS 보고 후 예외 throw.
-    /// </summary>
-    private int SelectEmptyAmrSlot()
-    {
-        bool s1, s2, s3, s4;
-        if (_simulator.Enabled)
-        {
-            (s1, s2, s3, s4) = (_simulator.GetAmrSlot(1), _simulator.GetAmrSlot(2),
-                                _simulator.GetAmrSlot(3), _simulator.GetAmrSlot(4));
-        }
-        else
-        {
-            var inputs = _ioModuleService.CurrentInputs
-                ?? throw CreateAbortException(Alarm.AmrSlotsFull,
-                    "AMR PLACE 슬롯 선택 실패 — I/O 모듈 입력 미수신");
-            (s1, s2, s3, s4) = (inputs.MzDetect1, inputs.MzDetect2, inputs.MzDetect3, inputs.MzDetect4);
-        }
-
-        // 센서 ON = 매거진 있음(occupied) → 그 슬롯 건너뜀
-        // 센서 OFF = 비어있음 → 그 슬롯에 PLACE
-        if (!s1) return Found(1);
-        if (!s2) return Found(2);
-        if (!s3) return Found(3);
-        if (!s4) return Found(4);
-
-        // 모든 슬롯 가득 참 → 알람 + ACS 보고
-        AddLog(SequenceStep.CobotPlace,
-            "AMR 슬롯 1~4 모두 가득 참 — PLACE 불가, 알람 발생", isError: true);
-
-        ReportAbnormalToAcs("AMR_SLOTS_FULL", "AMRSLOT");
-        throw CreateAbortException(Alarm.AmrSlotsFull,
-            "AMR 슬롯 1~4 모두 매거진 점유 중 — 빈 슬롯 없음");
-
-        int Found(int slot)
-        {
-            AddLog(SequenceStep.CobotPlace,
-                $"빈 AMR slot {slot} 선택 (1:{Show(s1)} 2:{Show(s2)} 3:{Show(s3)} 4:{Show(s4)})");
-
-            // 이전에 SLOTS_FULL abnormal 이 있었다면 해제 — 빈 슬롯 확보됐으므로
-            if (_ioModuleService.CurrentAbnormal?.Type == "AMR_SLOTS_FULL")
-                _ioModuleService.ClearAbnormal();
-
-            return slot;
-        }
-
-        static string Show(bool on) => on ? "Full" : "Empty";
     }
 
     /// <summary>알람 발생 + 시퀀스 중단을 위한 예외 생성</summary>

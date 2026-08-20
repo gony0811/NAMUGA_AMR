@@ -201,12 +201,24 @@ public class MainSequenceService : BackgroundService
             }
         }
 
-        // 5. amrSlot 상태 검증 (v0.3 §6 resultCode 21) — UNLOAD(픽업→AMR)는 빈 슬롯, LOAD(AMR→포트)는 점유 슬롯이어야 함.
-        //    EXCHANGE(설비행)는 슬롯 조작 없음 → 검증 생략. CHARGE 도 생략.
+        // 5. amrSlot 용도·상태 검증 (v0.3 §6 resultCode 21)
+        //    슬롯 용도 고정: 1|2 = NEW 매거진 픽업(투입슬롯), 3|4 = OLD 매거진 회수·반납(회수슬롯)
+        //    - UNLOAD(자재포트 픽업 → AMR): 슬롯 1|2 + 빈 슬롯이어야 함
+        //    - LOAD(AMR → 자재포트 반납): 슬롯 3|4 + 매거진이 있어야 함
+        //    EXCHANGE(설비행 도킹)·CHARGE 는 슬롯 조작 없음 → 검증 생략.
         var jt = (command.JobType ?? "").ToUpperInvariant();
         if (jt is "UNLOAD" or "LOAD")
         {
-            var slot = Math.Clamp(command.AmrSlot, 1, 4);
+            var slot = command.AmrSlot;
+            var slotRangeOk = jt == "UNLOAD" ? slot is 1 or 2 : slot is 3 or 4;
+            if (!slotRangeOk)
+            {
+                await ReplyAsync(command.CmdId, "REJECTED", 21,
+                    $"amrSlot {slot} 용도 위반 — {(jt == "UNLOAD" ? "픽업(UNLOAD)은 투입슬롯 1|2" : "반납(LOAD)은 회수슬롯 3|4")} 만 사용합니다.", ct,
+                    command.JobId ?? command.CmdId);
+                return;
+            }
+
             bool? occupied = null;
             if (sim) occupied = _simulator.GetAmrSlot(slot);
             else if (_ioModuleService.CurrentInputs is { } inp)
@@ -255,6 +267,16 @@ public class MainSequenceService : BackgroundService
             if (kind is not ("UNLOAD" or "LOAD"))
             {
                 _logger.LogWarning("actionCmd type 불명 — 무시 (type={Type}, jobType={JobType})", command.Type, command.JobType);
+                return;
+            }
+
+            // 슬롯 용도 검증: UNLOAD(OLD 회수→AMR)=회수슬롯 3|4, LOAD(NEW 투입←AMR)=투입슬롯 1|2
+            var actSlotOk = kind == "UNLOAD" ? command.AmrSlot is 3 or 4 : command.AmrSlot is 1 or 2;
+            if (!actSlotOk)
+            {
+                await ReplyAsync(command.CmdId, "REJECTED", 21,
+                    $"amrSlot {command.AmrSlot} 용도 위반 — actionCmd {(kind == "UNLOAD" ? "UNLOAD(회수)는 3|4" : "LOAD(투입)는 1|2")} 만 사용합니다.", ct,
+                    command.JobId ?? state.JobId);
                 return;
             }
 
