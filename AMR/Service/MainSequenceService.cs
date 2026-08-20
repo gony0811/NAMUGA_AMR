@@ -55,8 +55,6 @@ public class MainSequenceService : BackgroundService
         _mqttService.OnCommandReceived += command =>
             _ = HandleCommandAsync(command, stoppingToken);
 
-        AmrStatusMessage? previousStatus = null;
-
         // 충전량·pose 주기 로그 (메인 루프는 1초마다 돌지만 30초 간격으로만 기록)
         var lastStatusLog = DateTime.MinValue;
         var statusLogInterval = TimeSpan.FromSeconds(30);
@@ -100,11 +98,9 @@ public class MainSequenceService : BackgroundService
                     var abnormal = _ioModuleService.CurrentAbnormal;
                     var statusMessage = AmrStatusMessage.FromRobotStatus(robotStatus, alarm, abnormal);
 
-                    if (!statusMessage.Equals(previousStatus))
-                    {
-                        await _mqttService.PublishStatusAsync(statusMessage, stoppingToken);
-                        previousStatus = statusMessage;
-                    }
+                    // 사양(mqtt_interface.md): status 는 1초 주기 발행 (Retain).
+                    // 변경 시에만 발행하면 ACS 가 무변화 구간을 연결 끊김으로 판정하므로 매 주기 발행한다.
+                    await _mqttService.PublishStatusAsync(statusMessage, stoppingToken);
                 }
             }
             catch (OperationCanceledException)
