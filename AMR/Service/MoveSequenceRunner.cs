@@ -50,6 +50,11 @@ public class MoveSequenceRunner
     /// <summary>설비포트 actionCmd 대기 상한 (초). 0 = 무제한 (사양 v0.3 기본). 상한 초과 시 ERR-116 + FAILED(32).</summary>
     public int GateTimeoutSeconds { get; set; } = 0;
 
+    /// <summary>일반 반송(LOAD/UNLOAD) 설비(EQP) 도킹 후 ActionCmd 대기 없이 즉시 PICK/PLACE 실행.
+    /// 기본 false(기존대로 ActionCmd 대기). EXCHANGE 는 이 설정과 무관하게 항상 actionCmd 게이트 대기.
+    /// appsettings "SequenceSettings:GeneralMoveEqpDirectExecute" 로 설정 (v0.3.1 R3).</summary>
+    public bool GeneralMoveEqpDirectExecute { get; set; } = false;
+
     public MoveSequenceRunner(
         AmrService amrService,
         CobotService cobotService,
@@ -458,6 +463,19 @@ public class MoveSequenceRunner
 
         await _mqttService.PublishReplyAsync(reply, ct);
         AddLog(SequenceStep.MoveCmdReply, $"MoveCmdReply 전송: ACCEPTED (CmdId={command.CmdId})");
+
+        // EXECUTING — 실행 시작 통지 (v0.3 §5.1: ACS 는 무시/로그, 상태 시퀀스 ACCEPTED→EXECUTING→ARRIVED→COMPLETED)
+        await _mqttService.PublishReplyAsync(new CommandReply
+        {
+            CmdId = command.CmdId,
+            JobId = command.JobId ?? command.CmdId,
+            JobType = command.JobType,
+            Status = "EXECUTING",
+            ResultCode = 0,
+            Message = $"실행 시작: {command.NodeId}",
+            Timestamp = DateTime.UtcNow.ToString("o")
+        }, ct);
+        AddLog(SequenceStep.MoveCmdReply, "보고: EXECUTING (실행 시작)");
     }
 
     /// <summary>Step 3: NodeId → TaskIndex/JobIndex 변환 후 AMR 이동 명령</summary>
@@ -578,6 +596,14 @@ public class MoveSequenceRunner
         {
             AddLog(SequenceStep.WaitActionCmd,
                 $"자재포트 — ActionCmd 대기 없이 다음 단계 진행 (PortType={command.PortType ?? "없음"})");
+            return;
+        }
+
+        // 설비포트 즉시 실행 옵션 (v0.3.1 R3) — 일반 반송에 한함, EXCHANGE 는 별도 도킹 경로라 여기 안 옴
+        if (GeneralMoveEqpDirectExecute && !IsExchangeJob(command))
+        {
+            AddLog(SequenceStep.WaitActionCmd,
+                "설비포트 — GeneralMoveEqpDirectExecute=true: ActionCmd 대기 생략, 즉시 PICK/PLACE 진행");
             return;
         }
 

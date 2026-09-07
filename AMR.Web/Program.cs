@@ -145,6 +145,15 @@ using (var scope = app.Services.CreateScope())
     idleCharge.Enabled = autoCharge.Enabled;
     idleCharge.IdleTimeoutSeconds = autoCharge.IdleTimeoutSeconds;
     idleCharge.ChargeNodeId = autoCharge.ChargeNodeId;
+
+    // v0.3.1 R3 — 일반 반송(LOAD/UNLOAD) 설비 즉시 실행 옵션 (기본 false = 도킹 후 ActionCmd 대기)
+    var seqRunner = app.Services.GetRequiredService<MoveSequenceRunner>();
+    seqRunner.GeneralMoveEqpDirectExecute =
+        builder.Configuration.GetValue("SequenceSettings:GeneralMoveEqpDirectExecute", false);
+    app.Logger.LogInformation(
+        "SequenceSettings — GeneralMoveEqpDirectExecute={Direct} (일반 LOAD/UNLOAD 설비 도킹 후 {Mode})",
+        seqRunner.GeneralMoveEqpDirectExecute,
+        seqRunner.GeneralMoveEqpDirectExecute ? "즉시 실행" : "ActionCmd 대기");
 }
 
 // Configure the HTTP request pipeline.

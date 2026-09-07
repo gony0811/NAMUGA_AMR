@@ -7,8 +7,10 @@ namespace AMR.Web.Models;
 /// </summary>
 public class AutoChargeSettings
 {
-    /// <summary>자동 충전 기능 활성화</summary>
-    public bool Enabled { get; set; } = true;
+    /// <summary>자동 충전 기능 활성화 — v0.3.1: 기본 false.
+    /// ACS 운영에서는 유휴 시 자동 충전 이동이 ACS 배차와 경합하므로(거부/유휴 직후 충전소 이동으로 관찰됨)
+    /// 기본 끔. 필요 시 /AutoCharge 화면 또는 appsettings 에서 명시적으로 켠다.</summary>
+    public bool Enabled { get; set; } = false;
 
     /// <summary>Idle 판정 시간(초)</summary>
     public int IdleTimeoutSeconds { get; set; } = 20;

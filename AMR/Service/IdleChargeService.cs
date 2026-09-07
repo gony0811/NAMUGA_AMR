@@ -22,7 +22,7 @@ public class IdleChargeService : BackgroundService
     private readonly ILogger<IdleChargeService> _logger;
 
     /// <summary>자동 충전 기능 활성화</summary>
-    public bool Enabled { get; set; } = true;
+    public bool Enabled { get; set; } = false;   // v0.3.1: 기본 off — 복귀/충전 이동은 ACS 지시 원칙
 
     /// <summary>Idle 판정 시간(초) — 시퀀스 끝나고 이 시간 동안 명령 없으면 자동 충전</summary>
     public int IdleTimeoutSeconds { get; set; } = 20;

@@ -201,20 +201,20 @@ public class MainSequenceService : BackgroundService
             }
         }
 
-        // 5. amrSlot 용도·상태 검증 (v0.3 §6 resultCode 21)
-        //    슬롯 용도 고정: 1|2 = NEW 매거진 픽업(투입슬롯), 3|4 = OLD 매거진 회수·반납(회수슬롯)
-        //    - UNLOAD(자재포트 픽업 → AMR): 슬롯 1|2 + 빈 슬롯이어야 함
-        //    - LOAD(AMR → 자재포트 반납): 슬롯 3|4 + 매거진이 있어야 함
+        // 5. amrSlot 검증 (v0.3.1 — 2026-09-07 현장 이슈 반영)
+        //    슬롯 역할 규칙(1|2 투입 / 3|4 회수)은 EXCHANGE 전용 — 일반 반송(LOAD/UNLOAD)에는
+        //    적용하지 않고 "점유 검사"만 수행한다 (ACS 는 일반 반송에서 항상 amrSlot=1 을 보냄).
+        //    - moveCmd LOAD  (AMR 슬롯에서 PICK → 포트 PLACE): 해당 슬롯 OCCUPIED 필요
+        //    - moveCmd UNLOAD(포트에서 PICK → AMR 슬롯 PLACE): 해당 슬롯 EMPTY 필요
         //    EXCHANGE(설비행 도킹)·CHARGE 는 슬롯 조작 없음 → 검증 생략.
         var jt = (command.JobType ?? "").ToUpperInvariant();
         if (jt is "UNLOAD" or "LOAD")
         {
             var slot = command.AmrSlot;
-            var slotRangeOk = jt == "UNLOAD" ? slot is 1 or 2 : slot is 3 or 4;
-            if (!slotRangeOk)
+            if (slot is < 1 or > 4)
             {
                 await ReplyAsync(command.CmdId, "REJECTED", 21,
-                    $"amrSlot {slot} 용도 위반 — {(jt == "UNLOAD" ? "픽업(UNLOAD)은 투입슬롯 1|2" : "반납(LOAD)은 회수슬롯 3|4")} 만 사용합니다.", ct,
+                    $"amrSlot {slot} 범위 오류 — 1~4 만 사용합니다.", ct,
                     command.JobId ?? command.CmdId);
                 return;
             }
@@ -226,11 +226,17 @@ public class MainSequenceService : BackgroundService
 
             if (occupied is bool occ)
             {
-                var expectOccupied = jt == "LOAD";
-                if (occ != expectOccupied)
+                if (jt == "LOAD" && !occ)
                 {
                     await ReplyAsync(command.CmdId, "REJECTED", 21,
-                        $"amrSlot {slot} 상태 불일치 — {jt} 에는 {(expectOccupied ? "매거진이 있어야" : "빈 슬롯이어야")} 합니다.", ct,
+                        $"amrSlot {slot} 비어있음 — LOAD(PLACE)는 점유 슬롯 필요", ct,
+                        command.JobId ?? command.CmdId);
+                    return;
+                }
+                if (jt == "UNLOAD" && occ)
+                {
+                    await ReplyAsync(command.CmdId, "REJECTED", 21,
+                        $"amrSlot {slot} 점유 중 — UNLOAD(PICK)는 빈 슬롯 필요", ct,
                         command.JobId ?? command.CmdId);
                     return;
                 }
@@ -270,14 +276,50 @@ public class MainSequenceService : BackgroundService
                 return;
             }
 
-            // 슬롯 용도 검증: UNLOAD(OLD 회수→AMR)=회수슬롯 3|4, LOAD(NEW 투입←AMR)=투입슬롯 1|2
-            var actSlotOk = kind == "UNLOAD" ? command.AmrSlot is 3 or 4 : command.AmrSlot is 1 or 2;
-            if (!actSlotOk)
+            // 슬롯 역할 검증 — EXCHANGE 전용 (v0.3.1): UNLOAD(회수)=3|4, LOAD(투입)=1|2.
+            // 일반(jobType=LOAD/UNLOAD) actionCmd 는 역할 검사 없이 점유 검사만 수행.
+            var isExchangeJob = string.Equals(command.JobType, "EXCHANGE", StringComparison.OrdinalIgnoreCase);
+            if (isExchangeJob)
+            {
+                var actSlotOk = kind == "UNLOAD" ? command.AmrSlot is 3 or 4 : command.AmrSlot is 1 or 2;
+                if (!actSlotOk)
+                {
+                    await ReplyAsync(command.CmdId, "REJECTED", 21,
+                        $"amrSlot {command.AmrSlot} 용도 위반 — actionCmd {(kind == "UNLOAD" ? "UNLOAD(회수)는 3|4" : "LOAD(투입)는 1|2")} 만 사용합니다.", ct,
+                        command.JobId ?? state.JobId);
+                    return;
+                }
+            }
+            else if (command.AmrSlot is < 1 or > 4)
             {
                 await ReplyAsync(command.CmdId, "REJECTED", 21,
-                    $"amrSlot {command.AmrSlot} 용도 위반 — actionCmd {(kind == "UNLOAD" ? "UNLOAD(회수)는 3|4" : "LOAD(투입)는 1|2")} 만 사용합니다.", ct,
+                    $"amrSlot {command.AmrSlot} 범위 오류 — 1~4 만 사용합니다.", ct,
                     command.JobId ?? state.JobId);
                 return;
+            }
+
+            // 점유 사전 검사 (공통, 판정 가능할 때만): UNLOAD(→슬롯 PLACE)=EMPTY, LOAD(슬롯 PICK→)=OCCUPIED
+            bool? actOccupied = null;
+            if (_simulator.Enabled) actOccupied = _simulator.GetAmrSlot(command.AmrSlot);
+            else if (_ioModuleService.CurrentInputs is { } ainp)
+                actOccupied = command.AmrSlot switch { 1 => ainp.MzDetect1, 2 => ainp.MzDetect2, 3 => ainp.MzDetect3, _ => ainp.MzDetect4 };
+
+            if (actOccupied is bool aocc)
+            {
+                if (kind == "LOAD" && !aocc)
+                {
+                    await ReplyAsync(command.CmdId, "REJECTED", 21,
+                        $"amrSlot {command.AmrSlot} 비어있음 — LOAD(투입)는 점유 슬롯 필요", ct,
+                        command.JobId ?? state.JobId);
+                    return;
+                }
+                if (kind == "UNLOAD" && aocc)
+                {
+                    await ReplyAsync(command.CmdId, "REJECTED", 21,
+                        $"amrSlot {command.AmrSlot} 점유 중 — UNLOAD(회수)는 빈 슬롯 필요", ct,
+                        command.JobId ?? state.JobId);
+                    return;
+                }
             }
 
             _logger.LogInformation("actionCmd 독립 실행: type={Type}, amrSlot={Slot}, port={Port} (Job={JobId})",
