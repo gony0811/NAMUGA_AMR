@@ -1241,6 +1241,10 @@ public class MoveSequenceRunner
                     $"설비포트 PLACE slot {portSlotOffset + 1} (NEW 매거진)", token);
             }
 
+            // Home(DI25) — 일반 반송(Step 10)과 동일하게 작업 종료 시 안전 자세 복귀 후 완료 보고.
+            // (교환 작업 후 팔이 마지막 PLACE 자세에 남아, 이후 AMR 주행 시 문제 발생 — 2026-09-09 현장 반영)
+            await SendCobotCommandAndWaitAsync(25, "Home 위치 이동 (교환 작업 종료)", token);
+
             // COMPLETED (step/carrierSlot 포함 — ACS: ACT=UNLOAD→STEP 30, ACT=LOAD→STEP 40)
             await _mqttService.PublishReplyAsync(new CommandReply
             {
