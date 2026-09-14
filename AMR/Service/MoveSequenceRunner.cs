@@ -565,7 +565,7 @@ public class MoveSequenceRunner
     /// <summary>
     /// 정지(Stopped) 시점에 AMR 의 Task/Job 레지스터(HR31/32)를 역독해 Step 3 에서 쓴 값과 대조.
     /// 값이 다르면 다른 주체(리셋 복구 시퀀스의 TASK 50, 컨트롤 페이지 수동 조작 등)가 AMR 명령을
-    /// 덮어써서 이동이 끊긴 것이므로 "도착"이 아니라 ERR-117 로 중단한다.
+    /// 덮어써서 이동이 끊긴 것이므로 "도착"이 아니라 ERR-117 로 중단한다. (AMR 이 스스로 지우는 0/0 은 정상으로 본다.)
     /// (2026-09-12: 리셋 TASK 50 이 충전 이동을 끊었는데 정지를 도착으로 오판 → CurrentNodeId=충전노드 오기록
     ///  → 자동 충전 재트리거 영구 차단.) 읽기 실패는 판정에 쓰지 않는다 (경고만).
     /// </summary>
@@ -592,6 +592,14 @@ public class MoveSequenceRunner
         }
 
         if (actual == expected) return;
+
+        // 이 AMR 기종은 태스크를 수락하면 HR31/32 를 스스로 0 으로 지운다 (2026-09-14 현장: 정상 충전 완료가 0/0 으로 읽혀 ERR-117 오판).
+        // 0/0 은 "AMR 이 명령을 소비함" 이므로 정상. 덮어쓰기는 리셋 TASK 50 처럼 0 이 아닌 다른 값으로 나타난다.
+        if (actual == (0, 0))
+        {
+            _logger.LogDebug("AMR Task/Job 레지스터 0/0 — AMR 이 명령을 소비한 상태 (정상)");
+            return;
+        }
 
         AddLog(SequenceStep.WaitArrival,
             $"AMR Task/Job 레지스터 변경 감지 — 지시 Task={expected.Task}/Job={expected.Job}, 현재 Task={actual.TaskIndex}/Job={actual.JobIndex} " +
