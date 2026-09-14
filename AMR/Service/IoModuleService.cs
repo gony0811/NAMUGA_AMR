@@ -41,6 +41,13 @@ public class IoModuleService : BackgroundService
     private volatile bool _isHandlingReset;
     private volatile bool _isHandlingToggle;
 
+    /// <summary>
+    /// 리셋(짧게 누름) 복구 시퀀스 진행 중 여부 — 물리 스위치·UI 리셋 공통.
+    /// 진행 중에는 moveCmd/actionCmd 수락과 자동 충전 트리거를 보류한다 (MainSequenceService, IdleChargeService).
+    /// 2026-09-12: 복구 중 코봇이 Auto 로 돌아온 틈에 ACS 명령·자동 충전이 시작됐고, 복구 마지막 TASK 50 이 그 이동을 덮어씀.
+    /// </summary>
+    public bool IsRecoveryRunning { get; private set; }
+
     private const int CobotTimeoutSeconds = 60;
     private const int PollIntervalMs = 500;
     private const int InputPollIntervalMs = 200;       // 메인 입력 폴링 주기 (짧은 펄스 캐치)
@@ -425,6 +432,19 @@ public class IoModuleService : BackgroundService
     /// </summary>
     private async Task HandleResetSwitchAsync(CancellationToken ct)
     {
+        IsRecoveryRunning = true;
+        try
+        {
+            await RunResetRecoveryAsync(ct);
+        }
+        finally
+        {
+            IsRecoveryRunning = false;
+        }
+    }
+
+    private async Task RunResetRecoveryAsync(CancellationToken ct)
+    {
         _logger.LogInformation("[리셋] 코봇 복구 시퀀스 시작");
 
         // 0. Faulted 상태 해제 — 경광등이 NORMAL 상태로 복귀하도록
@@ -495,12 +515,44 @@ public class IoModuleService : BackgroundService
 
         // 9. AMR 에 TASK 50 수행 명령 — TaskIndex/JobIndex 설정 후 Start.
         //    (코봇 복구와 무관하게 best-effort 로 전송)
+        //    단, 시퀀스가 실행 중이거나 AMR 이 이미 주행 중이면 스킵 — Start 를 쓰면 진행 중인 이동이 끊긴다.
+        //    (2026-09-12: 복구 중 시작된 ACS 이동·자동 충전 이동을 TASK 50 이 덮어써 도착 오판 발생)
+        if (_sequenceRunner.State.IsRunning)
+        {
+            _logger.LogWarning("[리셋] 시퀀스 실행 중 — AMR TASK {Task}/Job {Job} 전송 스킵 (진행 중 이동 보호)",
+                ResetAmrTaskIndex, ResetAmrJobIndex);
+            return;
+        }
+        if (await IsAmrMovingAsync(ct))
+        {
+            _logger.LogWarning("[리셋] AMR 주행 중(RobotState=Started) — AMR TASK {Task}/Job {Job} 전송 스킵",
+                ResetAmrTaskIndex, ResetAmrJobIndex);
+            return;
+        }
+
         await TryStepAsync($"AMR TASK {ResetAmrTaskIndex}/Job {ResetAmrJobIndex} 수행", async () =>
         {
             await _amrService.SetTaskIndexAsync(ResetAmrTaskIndex, ct);
             await _amrService.SetJobIndexAsync(ResetAmrJobIndex, ct);
             await _amrService.SetExecutionControlAsync(ExecutionControl.Start, ct);
         }, ct);
+    }
+
+    /// <summary>AMR 주행 중 여부 — 읽기 실패는 "주행 중 아님"으로 간주 (기존 best-effort 동작 유지)</summary>
+    private async Task<bool> IsAmrMovingAsync(CancellationToken ct)
+    {
+        if (!_amrService.IsConnected) return false;
+        try
+        {
+            var status = await _amrService.ReadStatusAsync(ct);
+            return status.RobotState == RobotState.Started;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[리셋] AMR 상태 읽기 실패 — 주행 중 아님으로 간주");
+            return false;
+        }
     }
 
     /// <summary>리셋 시퀀스의 한 단계를 실행하고 실패해도 다음 단계로 진행</summary>

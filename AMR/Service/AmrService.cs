@@ -138,6 +138,10 @@ public class AmrService : BackgroundService
     public Task SetJobIndexAsync(ushort index, CancellationToken ct = default)
         => _modbusClient.SetJobIndexAsync(index, ct);
 
+    /// <summary>현재 AMR 에 지시된 Task/Job Index 역독 (HR31/32)</summary>
+    public Task<(ushort TaskIndex, ushort JobIndex)> ReadTaskJobIndexAsync(CancellationToken ct = default)
+        => _modbusClient.ReadTaskJobIndexAsync(ct);
+
     /// <summary>유저 변수 쓰기 (index: 0~149)</summary>
     public Task SetUserVariableAsync(ushort variableIndex, ushort value, CancellationToken ct = default)
         => _modbusClient.SetUserVariableAsync(variableIndex, value, ct);

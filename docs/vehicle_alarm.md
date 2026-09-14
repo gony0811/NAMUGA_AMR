@@ -127,3 +127,17 @@
 1. 설비포트 actionCmd 대기 시간이 설정 상한 초과 (기본 무제한 — 상한 설정 시에만 발동)
 ### Description
 - Equipment permission (ACTIONCMD relay) did not arrive within the configured limit. Sequence aborts with FAILED (resultCode=32).
+
+---
+# 운영 안정성 알람 (2026-09-12 현장 이슈)
+
+## ERR-117
+### AMR Move Interrupted
+### Severity (Level: Warning | Critical)
+- Critical
+### Condition
+1. AMR 이동 중 정지(Stopped) 시점에 Task/Job 레지스터(HR31/32)를 역독한 값이 시퀀스가 지시한 값과 다름
+   — 리셋 복구 시퀀스의 AMR TASK 50, 컨트롤 페이지 수동 조작 등 다른 주체가 AMR 명령을 덮어쓴 경우
+### Description
+- The in-progress AMR move was overridden by another command source, so the stop is NOT treated as arrival (CurrentNodeId is not recorded). Sequence aborts with FAILED (resultCode=99). ACS may re-issue the moveCmd.
+- 예방: 리셋 복구 시퀀스 진행 중(IsRecoveryRunning)에는 moveCmd/actionCmd 를 REJECTED(11) 로 거부하고 자동 충전도 보류하며, 복구 마지막 TASK 50 은 시퀀스 실행 중·AMR 주행 중이면 전송하지 않는다.

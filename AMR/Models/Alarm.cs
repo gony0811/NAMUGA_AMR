@@ -16,4 +16,7 @@ public record Alarm(string Id, int Code, string Name)
     public static readonly Alarm PickupSourceMagazineNotFound = new("ERR-114", 114, "Pickup Source Magazine Not Found");
     public static readonly Alarm ExchangeSlotStateMismatch = new("ERR-115", 115, "Exchange Slot State Mismatch");
     public static readonly Alarm ActionCmdWaitTimeout = new("ERR-116", 116, "ActionCmd Wait Timeout");
+
+    // 2026-09-12 현장 이슈: 리셋 복구 시퀀스의 AMR TASK 명령이 진행 중인 이동을 덮어써 도착 오판 발생
+    public static readonly Alarm AmrMoveInterrupted = new("ERR-117", 117, "AMR Move Interrupted");
 }

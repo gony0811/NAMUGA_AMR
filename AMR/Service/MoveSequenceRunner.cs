@@ -44,6 +44,12 @@ public class MoveSequenceRunner
     private const int CobotTimeoutSeconds = 60;
     private const int PollIntervalMs = 500;
 
+    /// <summary>도착 pose 와 매핑 좌표 차이가 이 값(m)을 넘으면 경고 로그 (판정에는 사용 안 함 — 정차 편차 ~0.2m 관측)</summary>
+    private const double ArrivalPoseWarnDistanceM = 0.5;
+
+    /// <summary>Step 3 에서 AMR 에 쓴 Task/Job — Step 4 도착 시 HR31/32 역독값과 대조 (다른 주체의 덮어쓰기 감지)</summary>
+    private (ushort Task, ushort Job)? _commandedTaskJob;
+
     /// <summary>설비포트 actionCmd 대기 중 경고 로그 주기 (초) — v0.3 §4.2</summary>
     private const int GateWarnIntervalSeconds = 120;
 
@@ -110,6 +116,7 @@ public class MoveSequenceRunner
             State.ErrorMessage = null;
             State.StartedAt = DateTime.Now;
             _cancelRequested = false;
+            _commandedTaskJob = null;
 
             // OPERATOR_ABORT / EXCHANGE_CANCEL_HOLD abnormal 은 운전자가 reset 으로 해제하는 것이
             // 정상 경로(IoModuleService.HandleResetSwitchAsync). 다만 그 과정 없이 새 job 이 들어오면
@@ -496,6 +503,7 @@ public class MoveSequenceRunner
             throw new InvalidOperationException($"위치 태그 매핑 없음: {command.NodeId}");
 
         // AMR에 TaskIndex, JobIndex 설정 후 시작
+        _commandedTaskJob = ((ushort)mapping.TaskIndex, (ushort)mapping.JobIndex);
         await _amrService.SetTaskIndexAsync((ushort)mapping.TaskIndex, ct);
         await _amrService.SetJobIndexAsync((ushort)mapping.JobIndex, ct);
         await _amrService.SetExecutionControlAsync(ExecutionControl.Start, ct);
@@ -543,6 +551,7 @@ public class MoveSequenceRunner
 
             if (status.RobotState == RobotState.Stopped)
             {
+                await VerifyMoveNotInterruptedAsync(command, ct);
                 await RecordArrivalAsync(command, ct);
                 return;
             }
@@ -553,7 +562,45 @@ public class MoveSequenceRunner
         ct.ThrowIfCancellationRequested();
     }
 
-    /// <summary>도착 시점에 CurrentNodeId 와 pose 정보를 로그에 기록</summary>
+    /// <summary>
+    /// 정지(Stopped) 시점에 AMR 의 Task/Job 레지스터(HR31/32)를 역독해 Step 3 에서 쓴 값과 대조.
+    /// 값이 다르면 다른 주체(리셋 복구 시퀀스의 TASK 50, 컨트롤 페이지 수동 조작 등)가 AMR 명령을
+    /// 덮어써서 이동이 끊긴 것이므로 "도착"이 아니라 ERR-117 로 중단한다.
+    /// (2026-09-12: 리셋 TASK 50 이 충전 이동을 끊었는데 정지를 도착으로 오판 → CurrentNodeId=충전노드 오기록
+    ///  → 자동 충전 재트리거 영구 차단.) 읽기 실패는 판정에 쓰지 않는다 (경고만).
+    /// </summary>
+    private async Task VerifyMoveNotInterruptedAsync(AmrCommand command, CancellationToken ct)
+    {
+        if (_commandedTaskJob is not { } expected) return;
+        _commandedTaskJob = null;   // 1회 소비 — 수동 Step 실행 등에서 이전 값으로 오판하지 않도록
+
+        (ushort TaskIndex, ushort JobIndex) actual;
+        try
+        {
+            actual = await _amrService.ReadTaskJobIndexAsync(ct);
+            if (actual != expected)
+            {
+                // 일시적 읽기 오류 배제 — 한 번 더 확인
+                await Task.Delay(PollIntervalMs, ct);
+                actual = await _amrService.ReadTaskJobIndexAsync(ct);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "AMR Task/Job 레지스터 역독 실패 — 이동 중단 검증 생략");
+            return;
+        }
+
+        if (actual == expected) return;
+
+        AddLog(SequenceStep.WaitArrival,
+            $"AMR Task/Job 레지스터 변경 감지 — 지시 Task={expected.Task}/Job={expected.Job}, 현재 Task={actual.TaskIndex}/Job={actual.JobIndex} " +
+            "(다른 주체가 AMR 명령을 덮어씀 — 도착으로 처리하지 않음)", isError: true);
+        throw CreateAbortException(Alarm.AmrMoveInterrupted,
+            $"이동 중 AMR 명령 덮어쓰기 (지시 {expected.Task}/{expected.Job} → 현재 {actual.TaskIndex}/{actual.JobIndex}) — NodeId={command.NodeId}");
+    }
+
+    /// <summary>도착 시점에 CurrentNodeId 와 pose 정보를 로그에 기록 (매핑 좌표가 있으면 차이도 경고용으로 기록)</summary>
     private async Task RecordArrivalAsync(AmrCommand command, CancellationToken ct)
     {
         State.CurrentNodeId = command.NodeId;
@@ -563,12 +610,33 @@ public class MoveSequenceRunner
             var arrivedPose = await _amrService.ReadPoseAsync(ct);
             AddLog(SequenceStep.WaitArrival,
                 $"AMR 도착 완료 (NodeId={command.NodeId}, Pose=({arrivedPose.X:F1}, {arrivedPose.Y:F1}, {arrivedPose.Angle:F1}°))");
+            await WarnIfPoseFarFromMappingAsync(command.NodeId, arrivedPose, ct);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "도착 pose 읽기 실패");
             AddLog(SequenceStep.WaitArrival,
                 $"AMR 도착 완료 (NodeId={command.NodeId}, Pose 읽기 실패)");
+        }
+    }
+
+    /// <summary>매핑에 등록된 노드 좌표와 도착 pose 차이가 크면 경고 로그 — 판정에는 쓰지 않는다 (정차 편차 오판 방지)</summary>
+    private async Task WarnIfPoseFarFromMappingAsync(string nodeId, RobotPose pose, CancellationToken ct)
+    {
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync(ct);
+            var m = await db.LocationTagMappings.FirstOrDefaultAsync(x => x.LocationTag == nodeId, ct);
+            if (m?.PoseX is not double mx || m.PoseY is not double my) return;
+
+            var dist = Math.Sqrt(Math.Pow(pose.X - mx, 2) + Math.Pow(pose.Y - my, 2));
+            if (dist > ArrivalPoseWarnDistanceM)
+                AddLog(SequenceStep.WaitArrival,
+                    $"주의: 도착 pose 가 {nodeId} 등록 좌표 ({mx:F2}, {my:F2}) 에서 {dist:F2}m 떨어짐 — 정차 위치·매핑 좌표 확인 필요", isError: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "도착 pose 매핑 좌표 비교 실패 ({NodeId})", nodeId);
         }
     }
 
@@ -1375,7 +1443,7 @@ public class MoveSequenceRunner
         112 or 114 => 30,                 // MAGAZINE_NOT_FOUND (자재포트 비어있음 / 픽업지 부재)
         110 or 111 or 113 or 115 => 31,   // 슬롯/센서 상태 불일치
         116 => 32,                        // 게이트 대기 상한 초과
-        _ => 99
+        _ => 99                           // 117(이동 덮어쓰기) 포함 — 사양에 전용 코드 없음
     };
 
     /// <summary>

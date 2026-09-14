@@ -1,3 +1,4 @@
+using AMR.Enums;
 using AMR.Models;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -19,6 +20,8 @@ public class IdleChargeService : BackgroundService
 {
     private readonly MoveSequenceRunner _runner;
     private readonly CobotService _cobotService;
+    private readonly AmrService _amrService;
+    private readonly IoModuleService _ioModuleService;
     private readonly ILogger<IdleChargeService> _logger;
 
     /// <summary>자동 충전 기능 활성화</summary>
@@ -42,10 +45,13 @@ public class IdleChargeService : BackgroundService
     private bool _previousIsRunning;
     private const int PollIntervalMs = 5000;
 
-    public IdleChargeService(MoveSequenceRunner runner, CobotService cobotService, ILogger<IdleChargeService> logger)
+    public IdleChargeService(MoveSequenceRunner runner, CobotService cobotService, AmrService amrService,
+        IoModuleService ioModuleService, ILogger<IdleChargeService> logger)
     {
         _runner = runner;
         _cobotService = cobotService;
+        _amrService = amrService;
+        _ioModuleService = ioModuleService;
         _logger = logger;
     }
 
@@ -90,16 +96,30 @@ public class IdleChargeService : BackgroundService
             return;
         }
 
+        // 리셋 복구 시퀀스 진행 중 → 활동으로 간주 (복구 마지막 AMR TASK 50 이 충전 이동을 덮어쓰는 것 방지, 2026-09-12)
+        if (_ioModuleService.IsRecoveryRunning)
+        {
+            LastActivityAt = DateTime.Now;
+            return;
+        }
+
         // 데모 모드는 별개 — 자동 충전 트리거 안 함
         if (state.IsDemoRunning) return;
 
         // 기능 OFF 또는 ChargeNodeId 미설정 → 트리거 안 함
         if (!Enabled || string.IsNullOrWhiteSpace(ChargeNodeId)) return;
 
-        // 이미 충전 노드에 있으면 트리거 안 함 (반복 방지)
-        if (string.Equals(state.CurrentNodeId, ChargeNodeId, StringComparison.OrdinalIgnoreCase)) return;
-
         if (IdleSeconds < IdleTimeoutSeconds) return;
+
+        // 이미 충전 노드에 있으면 트리거 안 함 (반복 방지) — 단, 실제로 충전 중일 때만.
+        // 충전 노드로 기록돼 있는데 Discharging 이면 도착 오판·도킹 실패 등이므로 재트리거한다 (2026-09-12: 7분 방치 원인).
+        var atChargeNode = string.Equals(state.CurrentNodeId, ChargeNodeId, StringComparison.OrdinalIgnoreCase);
+        if (atChargeNode)
+        {
+            if (_amrService.LastStatus?.Battery.ChargingState == ChargingState.Charging) return;
+            _logger.LogWarning("충전 노드({Node}) 기록이나 충전 중 아님(ChargingState={State}) — 자동 충전 재트리거",
+                ChargeNodeId, _amrService.LastStatus?.Battery.ChargingState);
+        }
 
         // ★ Cobot 이 Manual(또는 미연결)이면 자동 충전 트리거 안 함 — 공통 게이트 사용
         if (await _cobotService.IsManualOrUnavailableAsync(stoppingToken))
@@ -125,12 +145,13 @@ public class IdleChargeService : BackgroundService
             AmrSlot = 1
         };
 
+        var idleSeconds = IdleSeconds;
         LastTriggerAt = DateTime.Now;
         LastActivityAt = DateTime.Now;   // 즉시 재트리거 방지
 
         _logger.LogInformation(
             "자동 충전 트리거 — Idle {Sec:F0}s 경과 (>= {Timeout}s), ChargeNode={Node}, CmdId={CmdId}",
-            IdleSeconds, IdleTimeoutSeconds, ChargeNodeId, command.CmdId);
+            idleSeconds, IdleTimeoutSeconds, ChargeNodeId, command.CmdId);
 
         // fire-and-forget — 시퀀스가 자체적으로 _runLock 으로 보호됨
         _ = Task.Run(async () =>

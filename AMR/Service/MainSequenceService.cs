@@ -178,6 +178,16 @@ public class MainSequenceService : BackgroundService
             return;
         }
 
+        // 2-1. 리셋 복구 시퀀스 진행 중 확인 — 복구가 코봇을 Auto 로 되돌린 직후 명령이 수락되면
+        //      복구 마지막 단계(AMR TASK 50)가 그 이동을 덮어쓴다 (2026-09-12). ACS 는 재전송하므로 거부해도 무방.
+        if (!sim && _ioModuleService.IsRecoveryRunning)
+        {
+            _logger.LogWarning("리셋 복구 시퀀스 진행 중에 moveCmd 수신 — 거부: NodeId={NodeId}", command.NodeId);
+            await ReplyAsync(command.CmdId, "REJECTED", 11,
+                "리셋 복구 시퀀스가 진행 중입니다. 완료 후 재전송하세요.", ct, command.JobId ?? command.CmdId);
+            return;
+        }
+
         if (!sim)
         {
             // 3. 현재 작업 상태 확인 (Idle 상태에서만 이동 명령 수행)
@@ -261,6 +271,15 @@ public class MainSequenceService : BackgroundService
 
         if (state.IsExchangeDocked && !state.IsRunning)
         {
+            // 리셋 복구 시퀀스 진행 중(코봇 Phome 이동 등) 에는 코봇 작업을 시작하지 않는다 — DI 핸드셰이크 충돌 방지
+            if (!_simulator.Enabled && _ioModuleService.IsRecoveryRunning)
+            {
+                _logger.LogWarning("리셋 복구 시퀀스 진행 중에 actionCmd 수신 — 거부 (Job={JobId})", command.JobId);
+                await ReplyAsync(command.CmdId, "REJECTED", 11,
+                    "리셋 복구 시퀀스가 진행 중입니다. 완료 후 재전송하세요.", ct, command.JobId ?? command.CmdId);
+                return;
+            }
+
             var jobOk = string.IsNullOrWhiteSpace(command.JobId) ||
                         string.Equals(command.JobId, state.JobId, StringComparison.OrdinalIgnoreCase);
             if (!jobOk)

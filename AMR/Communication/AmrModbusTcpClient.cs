@@ -100,6 +100,16 @@ public class AmrModbusTcpClient : IDisposable
     public Task SetJobIndexAsync(ushort index, CancellationToken ct = default)
         => WriteRegisterAsync(ModbusRegisterMap.Holding.JobIndex, index, ct);
 
+    /// <summary>
+    /// 현재 AMR 에 지시된 Task/Job Index 읽기 (HR31/32 역독).
+    /// 시퀀스가 쓴 값과 다르면 다른 주체(리셋 시퀀스·컨트롤 페이지 등)가 AMR 명령을 덮어쓴 것.
+    /// </summary>
+    public async Task<(ushort TaskIndex, ushort JobIndex)> ReadTaskJobIndexAsync(CancellationToken ct = default)
+    {
+        var regs = await ReadRawHoldingRegistersAsync(ModbusRegisterMap.Holding.TaskIndex, 2, ct);
+        return (regs[0], regs[1]);
+    }
+
     /// <summary>유저 변수 쓰기 (index: 0~149 → 매뉴얼 주소 50~199)</summary>
     public Task SetUserVariableAsync(ushort variableIndex, ushort value, CancellationToken ct = default)
     {
