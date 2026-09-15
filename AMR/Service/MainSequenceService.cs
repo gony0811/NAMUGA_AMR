@@ -172,6 +172,24 @@ public class MainSequenceService : BackgroundService
         // 2. 시퀀스 실행 중 확인
         if (_sequenceRunner.State.IsRunning)
         {
+            // R1 (2026-09-15): ACS 정체복구 로직이 같은 moveCmd 를 0.1~0.8초 뒤 한 번 더 보내는 경우가 있다.
+            // cmdId·nodeId·port·jobType·amrSlot 이 실행 중 명령과 모두 같으면 재전송으로 보고 ACCEPTED 만 1회 재응답
+            // (REJECTED 로 답하면 ACS 가 픽업 실패로 롤백해 실제 COMPLETED 가 버려짐). EXCHANGE 는 STEP 10/20/50 이
+            // 같은 cmdId 를 쓰므로 cmdId 만으로 판단하지 않는다. ARRIVED/COMPLETED 는 다시 보내지 않는다.
+            if (IsSameAsRunningCommand(command, _sequenceRunner.State))
+            {
+                _logger.LogInformation("중복 moveCmd 무시(재전송): cmdId={CmdId}, nodeId={NodeId}", command.CmdId, command.NodeId);
+                await _mqttService.PublishReplyAsync(new CommandReply
+                {
+                    CmdId = command.CmdId,
+                    Status = "ACCEPTED",
+                    ResultCode = 0,
+                    Message = $"이동 명령 수락 (재전송 — 이미 실행 중): {command.NodeId}",
+                    Timestamp = DateTime.UtcNow.ToString("o")
+                }, ct);
+                return;
+            }
+
             _logger.LogWarning("시퀀스 실행 중에 moveCmd 수신: NodeId={NodeId}", command.NodeId);
             await ReplyAsync(command.CmdId, "REJECTED", 11,
                 "시퀀스가 현재 실행 중입니다.", ct, command.JobId ?? command.CmdId);
@@ -383,6 +401,17 @@ public class MainSequenceService : BackgroundService
             await ReplyAsync(command.CmdId, "CANCELED", 40,
                 $"CANCEL_REJECTED — 해당 Job 이 진행 중이 아니거나 이미 종료되었습니다: {jobId}", ct, jobId);
         }
+    }
+
+    /// <summary>수신 moveCmd 가 실행 중 명령의 재전송인지 — cmdId·nodeId·port·jobType·amrSlot 5개 필드 전부 일치 (R1)</summary>
+    private static bool IsSameAsRunningCommand(AmrCommand command, SequenceState running)
+    {
+        static string N(string? v) => (v ?? "").Trim().ToUpperInvariant();
+        return N(command.CmdId) == N(running.CmdId)
+            && N(command.NodeId) == N(running.NodeId)
+            && N(command.Port) == N(running.Port)
+            && N(command.JobType) == N(running.JobType)
+            && command.AmrSlot == running.AmrSlot;
     }
 
     private async Task ReplyAsync(string cmdId, string status, int resultCode, string message,

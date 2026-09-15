@@ -22,6 +22,7 @@ public class IdleChargeService : BackgroundService
     private readonly CobotService _cobotService;
     private readonly AmrService _amrService;
     private readonly IoModuleService _ioModuleService;
+    private readonly SequenceSimulator _simulator;
     private readonly ILogger<IdleChargeService> _logger;
 
     /// <summary>자동 충전 기능 활성화</summary>
@@ -43,17 +44,22 @@ public class IdleChargeService : BackgroundService
     public double IdleSeconds => (DateTime.Now - LastActivityAt).TotalSeconds;
 
     private bool _previousIsRunning;
+    private string? _holdReason;   // 자동 충전 보류 사유 — 사유가 바뀔 때만 로그 (40초마다 반복 출력 금지, R2)
     private const int PollIntervalMs = 5000;
 
     public IdleChargeService(MoveSequenceRunner runner, CobotService cobotService, AmrService amrService,
-        IoModuleService ioModuleService, ILogger<IdleChargeService> logger)
+        IoModuleService ioModuleService, SequenceSimulator simulator, ILogger<IdleChargeService> logger)
     {
         _runner = runner;
         _cobotService = cobotService;
         _amrService = amrService;
         _ioModuleService = ioModuleService;
+        _simulator = simulator;
         _logger = logger;
     }
+
+    /// <summary>현재 자동 충전 보류 사유 (없으면 null) — 웹 UI 표시용</summary>
+    public string? HoldReason => _holdReason;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -96,18 +102,35 @@ public class IdleChargeService : BackgroundService
             return;
         }
 
-        // 리셋 복구 시퀀스 진행 중 → 활동으로 간주 (복구 마지막 AMR TASK 50 이 충전 이동을 덮어쓰는 것 방지, 2026-09-12)
-        if (_ioModuleService.IsRecoveryRunning)
-        {
-            LastActivityAt = DateTime.Now;
-            return;
-        }
-
         // 데모 모드는 별개 — 자동 충전 트리거 안 함
         if (state.IsDemoRunning) return;
 
         // 기능 OFF 또는 ChargeNodeId 미설정 → 트리거 안 함
         if (!Enabled || string.IsNullOrWhiteSpace(ChargeNodeId)) return;
+
+        // R2 (2026-09-15) 보류 조건 — 해당하는 동안 Idle 타이머를 계속 리셋해 조건 해소 후 IdleTimeout 을 다시 센다.
+        //  - 잡 진행 중: 설비 앞 actionCmd/다음 명령 대기(ExchangeDocked)  (시퀀스 실행 중은 위에서 이미 처리)
+        //  - 슬롯 점유: AMR 슬롯 1~4 중 하나라도 매거진 (매거진 실은 채 충전소로 가는 사고 방지)
+        //  - 리셋 복구 중: 복구 마지막 AMR TASK 50 이 충전 이동을 덮어쓰는 것 방지 (2026-09-12)
+        var hold = state.IsExchangeDocked ? "잡 진행 중"
+                 : AnyAmrSlotOccupied() ? "슬롯 점유"
+                 : _ioModuleService.IsRecoveryRunning ? "리셋 복구 중"
+                 : null;
+        if (hold != null)
+        {
+            LastActivityAt = DateTime.Now;
+            if (_holdReason != hold)
+            {
+                _logger.LogInformation("자동 충전 보류: {Reason}", hold);
+                _holdReason = hold;
+            }
+            return;
+        }
+        if (_holdReason != null)
+        {
+            _logger.LogInformation("자동 충전 보류 해제 ({Reason}) — Idle {Timeout}s 재계수", _holdReason, IdleTimeoutSeconds);
+            _holdReason = null;
+        }
 
         if (IdleSeconds < IdleTimeoutSeconds) return;
 
@@ -121,8 +144,8 @@ public class IdleChargeService : BackgroundService
                 ChargeNodeId, _amrService.LastStatus?.Battery.ChargingState);
         }
 
-        // ★ Cobot 이 Manual(또는 미연결)이면 자동 충전 트리거 안 함 — 공통 게이트 사용
-        if (await _cobotService.IsManualOrUnavailableAsync(stoppingToken))
+        // ★ Cobot 이 Manual(또는 미연결)이면 자동 충전 트리거 안 함 — 공통 게이트 사용 (시뮬레이션 모드는 하드웨어 검증 생략)
+        if (!_simulator.Enabled && await _cobotService.IsManualOrUnavailableAsync(stoppingToken))
         {
             _logger.LogInformation("Cobot Manual/미연결 — 자동 충전 트리거 보류");
             return;
@@ -130,6 +153,13 @@ public class IdleChargeService : BackgroundService
 
         // 트리거
         TriggerChargeSequence(stoppingToken);
+    }
+
+    /// <summary>AMR 슬롯 1~4 중 매거진 점유 여부 — 시뮬레이션이면 가상 슬롯, 아니면 I/O 모듈 MzDetect 센서</summary>
+    private bool AnyAmrSlotOccupied()
+    {
+        if (_simulator.Enabled) return _simulator.AmrSlots.Any(o => o);
+        return _ioModuleService.CurrentInputs is { } inp && (inp.MzDetect1 || inp.MzDetect2 || inp.MzDetect3 || inp.MzDetect4);
     }
 
     private void TriggerChargeSequence(CancellationToken stoppingToken)
