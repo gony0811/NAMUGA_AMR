@@ -1,5 +1,7 @@
+using AMR.Data;
 using AMR.Enums;
 using AMR.Models;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -23,6 +25,7 @@ public class IdleChargeService : BackgroundService
     private readonly AmrService _amrService;
     private readonly IoModuleService _ioModuleService;
     private readonly SequenceSimulator _simulator;
+    private readonly IDbContextFactory<AmrDbContext> _dbFactory;
     private readonly ILogger<IdleChargeService> _logger;
 
     /// <summary>자동 충전 기능 활성화</summary>
@@ -55,14 +58,23 @@ public class IdleChargeService : BackgroundService
     private bool _retryCapLogged;
     private const int MaxChargeRetries = 3;
 
+    // 도킹 판정은 좌표 우선 (2026-09-23 2차): 만충 근처에서는 BMS 가 거의 항상 Discharging(0.00A) 을 보고해 Charging 관측이 운에 달린다.
+    // 매핑 표에 충전 노드 좌표가 등록돼 있으면 현재 pose 가 그 반경 안일 때 도킹 상태로 보고 재트리거하지 않는다
+    // (V마커 정밀 도킹 재현성 ~0.05m, 9/12 오판 사례는 0.3m·0.6m). 좌표 미등록이면 판정 불가 → 재트리거 안 함.
+    private const double DockPoseToleranceM = 0.15;
+    private (string NodeId, double? X, double? Y, DateTime LoadedAt)? _chargePoseCache;
+    private string? _dockNoteLogged;
+
     public IdleChargeService(MoveSequenceRunner runner, CobotService cobotService, AmrService amrService,
-        IoModuleService ioModuleService, SequenceSimulator simulator, ILogger<IdleChargeService> logger)
+        IoModuleService ioModuleService, SequenceSimulator simulator, IDbContextFactory<AmrDbContext> dbFactory,
+        ILogger<IdleChargeService> logger)
     {
         _runner = runner;
         _cobotService = cobotService;
         _amrService = amrService;
         _ioModuleService = ioModuleService;
         _simulator = simulator;
+        _dbFactory = dbFactory;
         _logger = logger;
     }
 
@@ -156,32 +168,45 @@ public class IdleChargeService : BackgroundService
 
         // 이미 충전 노드에 있으면 트리거 안 함 (반복 방지) — 단, 실제로 충전 중일 때만.
         // 충전 노드로 기록돼 있는데 Discharging 이면 도착 오판·도킹 실패 등이므로 재트리거한다 (2026-09-12: 7분 방치 원인).
+        // 충전 노드 판정: 시퀀스 기록(CurrentNodeId) 또는 현재 pose 가 충전 노드 좌표 반경 안 (부팅 직후처럼 기록이 없어도 좌표로 인식)
         var atChargeNode = string.Equals(state.CurrentNodeId, ChargeNodeId, StringComparison.OrdinalIgnoreCase);
-        if (atChargeNode)
+        var atChargePose = await IsAtChargePoseAsync(stoppingToken);   // null = 좌표 미등록/pose 미확인
+        if (atChargeNode || atChargePose == true)
         {
-            if (_amrService.LastStatus?.Battery.ChargingState == ChargingState.Charging) return;
+            var chargingNow = !_simulator.Enabled && _amrService.LastStatus?.Battery.ChargingState == ChargingState.Charging;
+            if (chargingNow || _chargingSeenSinceTrigger) { _dockNoteLogged = null; return; }
 
-            // 마지막 충전 이동 이후 Charging 이 관측됐으면 도킹 성공 — 지금 Discharging 은 만충 근처 BMS 트리클 (2026-09-23)
-            if (_chargingSeenSinceTrigger) return;
+            if (atChargePose == true)
+            {
+                LogDockNoteOnce("충전소 좌표 반경 내 — 도킹 상태로 판단, 재트리거 안 함 (Charging 미관측은 만충 근처 BMS 특성)");
+                return;
+            }
+            if (atChargePose == null)
+            {
+                LogDockNoteOnce($"충전 노드({ChargeNodeId}) 좌표 미등록 또는 pose 미확인 — 도킹 검증 불가, 재트리거 안 함 (설정 화면 매핑에 좌표 입력 권장)");
+                return;
+            }
 
+            // 충전 노드로 기록돼 있는데 좌표 밖 + Charging 미관측 = 도킹 실패 (9/12: 30cm 옆 정지) → 재시도, 상한 3회
             if (_chargeRetryCount >= MaxChargeRetries)
             {
                 if (!_retryCapLogged)
                 {
-                    _logger.LogWarning("자동 충전 재시도 {Max}회 초과 — Charging 미관측, 충전기/도킹 확인 필요 (새 작업 후 재시도)", MaxChargeRetries);
+                    _logger.LogWarning("자동 충전 재시도 {Max}회 초과 — 충전소 좌표 밖·Charging 미관측, 충전기/도킹 확인 필요 (새 작업 후 재시도)", MaxChargeRetries);
                     _retryCapLogged = true;
                 }
                 return;
             }
 
             _chargeRetryCount++;
-            _logger.LogWarning("충전 노드({Node}) 기록이나 Charging 미관측(ChargingState={State}) — 자동 충전 재트리거 ({N}/{Max})",
+            _logger.LogWarning("충전 노드({Node}) 기록이나 좌표 밖·Charging 미관측(ChargingState={State}) — 자동 충전 재트리거 ({N}/{Max})",
                 ChargeNodeId, _amrService.LastStatus?.Battery.ChargingState, _chargeRetryCount, MaxChargeRetries);
         }
         else
         {
             _chargeRetryCount = 0;   // 충전 노드 밖에서의 트리거는 새 도킹 시도
             _retryCapLogged = false;
+            _dockNoteLogged = null;
         }
 
         // ★ Cobot 이 Manual(또는 미연결)이면 자동 충전 트리거 안 함 — 공통 게이트 사용 (시뮬레이션 모드는 하드웨어 검증 생략)
@@ -193,6 +218,42 @@ public class IdleChargeService : BackgroundService
 
         // 트리거
         TriggerChargeSequence(stoppingToken);
+    }
+
+    private void LogDockNoteOnce(string note)
+    {
+        if (_dockNoteLogged == note) return;
+        _logger.LogInformation("{Note}", note);
+        _dockNoteLogged = note;
+    }
+
+    /// <summary>현재 pose 가 충전 노드 등록 좌표 반경(DockPoseToleranceM) 안인지 — 좌표 미등록·pose 미확인이면 null</summary>
+    private async Task<bool?> IsAtChargePoseAsync(CancellationToken ct)
+    {
+        var pose = _simulator.Enabled ? _simulator.Pose : _amrService.LastStatus?.Pose;
+        if (pose == null) return null;
+
+        var cache = _chargePoseCache;
+        if (cache == null || cache.Value.NodeId != ChargeNodeId || DateTime.Now - cache.Value.LoadedAt > TimeSpan.FromMinutes(1))
+        {
+            try
+            {
+                await using var db = await _dbFactory.CreateDbContextAsync(ct);
+                var m = await db.LocationTagMappings.AsNoTracking().FirstOrDefaultAsync(x => x.LocationTag == ChargeNodeId, ct);
+                cache = (ChargeNodeId, m?.PoseX, m?.PoseY, DateTime.Now);
+                _chargePoseCache = cache;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "충전 노드 좌표 조회 실패 ({Node})", ChargeNodeId);
+                return null;
+            }
+        }
+
+        if (cache.Value.X is not double cx || cache.Value.Y is not double cy) return null;
+        var dist = Math.Sqrt(Math.Pow(pose.X - cx, 2) + Math.Pow(pose.Y - cy, 2));
+        return dist <= DockPoseToleranceM;
     }
 
     /// <summary>AMR 슬롯 1~4 중 매거진 점유 여부 — 시뮬레이션이면 가상 슬롯, 아니면 I/O 모듈 MzDetect 센서</summary>
