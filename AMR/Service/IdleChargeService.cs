@@ -47,6 +47,14 @@ public class IdleChargeService : BackgroundService
     private string? _holdReason;   // 자동 충전 보류 사유 — 사유가 바뀔 때만 로그 (40초마다 반복 출력 금지, R2)
     private const int PollIntervalMs = 5000;
 
+    // 충전 노드 도킹 판정 (2026-09-23): 마지막 충전 이동 이후 Charging 이 한 번이라도 관측되면 도킹 성공.
+    // 만충 근처에서는 BMS 가 Charging/Discharging 을 오가므로(전류 0~0.1A) "지금 Discharging" 만으로 재트리거하면 무한 반복.
+    // Charging 이 전혀 안 뜨는 진짜 도킹 실패만 재시도하되 MaxChargeRetries 회로 제한 (충전기 고장 시 무한 반복 방지).
+    private volatile bool _chargingSeenSinceTrigger;
+    private int _chargeRetryCount;
+    private bool _retryCapLogged;
+    private const int MaxChargeRetries = 3;
+
     public IdleChargeService(MoveSequenceRunner runner, CobotService cobotService, AmrService amrService,
         IoModuleService ioModuleService, SequenceSimulator simulator, ILogger<IdleChargeService> logger)
     {
@@ -60,6 +68,12 @@ public class IdleChargeService : BackgroundService
 
     /// <summary>현재 자동 충전 보류 사유 (없으면 null) — 웹 UI 표시용</summary>
     public string? HoldReason => _holdReason;
+
+    /// <summary>MainSequenceService 상태 루프(1초)에서 호출 — Charging 관측 기록 (5초 폴링으로는 짧은 Charging 을 놓침)</summary>
+    public void NoteChargingState(ChargingState state)
+    {
+        if (state == ChargingState.Charging) _chargingSeenSinceTrigger = true;
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -90,6 +104,12 @@ public class IdleChargeService : BackgroundService
         {
             LastActivityAt = DateTime.Now;
             _previousIsRunning = true;
+            // 충전이 아닌 작업이 시작되면 충전 재시도 이력 초기화 (다음 도킹은 새 시도)
+            if (!(state.JobType?.Contains("CHARGE", StringComparison.OrdinalIgnoreCase) ?? false))
+            {
+                _chargeRetryCount = 0;
+                _retryCapLogged = false;
+            }
             return;
         }
 
@@ -140,8 +160,28 @@ public class IdleChargeService : BackgroundService
         if (atChargeNode)
         {
             if (_amrService.LastStatus?.Battery.ChargingState == ChargingState.Charging) return;
-            _logger.LogWarning("충전 노드({Node}) 기록이나 충전 중 아님(ChargingState={State}) — 자동 충전 재트리거",
-                ChargeNodeId, _amrService.LastStatus?.Battery.ChargingState);
+
+            // 마지막 충전 이동 이후 Charging 이 관측됐으면 도킹 성공 — 지금 Discharging 은 만충 근처 BMS 트리클 (2026-09-23)
+            if (_chargingSeenSinceTrigger) return;
+
+            if (_chargeRetryCount >= MaxChargeRetries)
+            {
+                if (!_retryCapLogged)
+                {
+                    _logger.LogWarning("자동 충전 재시도 {Max}회 초과 — Charging 미관측, 충전기/도킹 확인 필요 (새 작업 후 재시도)", MaxChargeRetries);
+                    _retryCapLogged = true;
+                }
+                return;
+            }
+
+            _chargeRetryCount++;
+            _logger.LogWarning("충전 노드({Node}) 기록이나 Charging 미관측(ChargingState={State}) — 자동 충전 재트리거 ({N}/{Max})",
+                ChargeNodeId, _amrService.LastStatus?.Battery.ChargingState, _chargeRetryCount, MaxChargeRetries);
+        }
+        else
+        {
+            _chargeRetryCount = 0;   // 충전 노드 밖에서의 트리거는 새 도킹 시도
+            _retryCapLogged = false;
         }
 
         // ★ Cobot 이 Manual(또는 미연결)이면 자동 충전 트리거 안 함 — 공통 게이트 사용 (시뮬레이션 모드는 하드웨어 검증 생략)
@@ -178,6 +218,7 @@ public class IdleChargeService : BackgroundService
         var idleSeconds = IdleSeconds;
         LastTriggerAt = DateTime.Now;
         LastActivityAt = DateTime.Now;   // 즉시 재트리거 방지
+        _chargingSeenSinceTrigger = false;   // 이번 도킹 시도 이후의 Charging 관측만 인정
 
         _logger.LogInformation(
             "자동 충전 트리거 — Idle {Sec:F0}s 경과 (>= {Timeout}s), ChargeNode={Node}, CmdId={CmdId}",

@@ -87,6 +87,8 @@ public class MainSequenceService : BackgroundService
                         lastStatusLog = now;
                     }
 
+                    _idleChargeService.NoteChargingState(robotStatus.Battery.ChargingState);
+
                     var alarm = simMode ? null : await _alarmService.EvaluateAsync(stoppingToken);
 
                     if (alarm != null && _sequenceRunner.State.IsRunning)
