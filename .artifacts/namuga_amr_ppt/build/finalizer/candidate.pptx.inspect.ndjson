@@ -1,0 +1,360 @@
+{"kind":"deck","id":"pr/me20es","name":"Deck"}
+{"kind":"layout","layoutId":"0a4042a4-4da3-4e8f-a20d-2ed5e11966b0","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"9124d036-4487-4af9-969a-962c936237bb","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/hb18rr","slide":1,"title":"Confidential","textShapes":9}
+{"kind":"textbox","id":"sh/7u1wnm5o","slide":1,"text":"Confidential","textPreview":"Confidential","textChars":12,"textLines":1,"bbox":[850,18,150,18]}
+{"kind":"shape","id":"sh/svudgrm9","slide":1,"bbox":[40,135,8,255]}
+{"kind":"textbox","id":"sh/tw3epwnu","slide":1,"text":"NAMUGA AMR","textPreview":"NAMUGA AMR","textChars":10,"textLines":1,"bbox":[76,156,650,42]}
+{"kind":"textbox","id":"sh/uxcvi14z","slide":1,"text":"제어 구성 및 QR 기반\n매거진 PICKUP / PLACE 위치 정밀도 확보 방안","textPreview":"제어 구성 및 QR 기반 | 매거진 PICKUP / PLACE 위치 정밀도 확보 방안","textChars":45,"textLines":2,"bbox":[76,205,830,108]}
+{"kind":"textbox","id":"sh/fylwr65k","slide":1,"text":"AMR 정차 오차 ±50 mm를 비전 보정으로 흡수하는 시스템 설계","textPreview":"AMR 정차 오차 ±50 mm를 비전 보정으로 흡수하는 시스템 설계","textChars":37,"textLines":1,"bbox":[78,325,800,34]}
+{"kind":"textbox","id":"sh/gzudkbm5","slide":1,"text":"시스템 개요 · 보정 원리 · 작업 시퀀스 · 검증 기준","textPreview":"시스템 개요 · 보정 원리 · 작업 시퀀스 · 검증 기준","textChars":31,"textLines":1,"bbox":[78,373,690,27]}
+{"kind":"shape","id":"sh/h03etgnq","slide":1,"bbox":[76,438,865,0]}
+{"kind":"textbox","id":"sh/21cvm14b","slide":1,"text":"NAMUGA  |  2026. 10","textPreview":"NAMUGA  |  2026. 10","textChars":19,"textLines":1,"bbox":[78,466,400,24]}
+{"kind":"textbox","id":"sh/325wv65w","slide":1,"text":"NAMUGA AMR","textPreview":"NAMUGA AMR","textChars":10,"textLines":1,"bbox":[790,585,220,34]}
+{"kind":"textbox","id":"sh/3ixgbepk","slide":1,"text":"QR Guided Precision Handling","textPreview":"QR Guided Precision Handling","textChars":28,"textLines":1,"bbox":[790,620,220,22]}
+{"kind":"textbox","id":"sh/2hozi9oz","slide":1,"text":"Copyright © NAMUGA. 2026. All Rights Reserved.","textPreview":"Copyright © NAMUGA. 2026. All Rights Reserved.","textChars":46,"textLines":1,"bbox":[40,690,470,16]}
+{"kind":"notes","id":"nt/hb18rr","slide":1,"text":"본 자료는 NAMUGA_AMR 구현 코드와 인터페이스 문서를 기반으로 작성함. 정량 성능은 현장 POC에서 검증 필요."}
+{"kind":"slide","id":"sl/buzqzw","slide":2,"title":"NAMUGA AMR 제어 구성도","textShapes":38}
+{"kind":"textbox","id":"sh/jal0fi1c","slide":2,"text":"NAMUGA AMR 제어 구성도","textPreview":"NAMUGA AMR 제어 구성도","textChars":17,"textLines":1,"bbox":[40,20,720,42]}
+{"kind":"textbox","id":"sh/4buh8nix","slide":2,"text":"관제 명령부터 협동로봇 위치 보정까지 단일 시퀀스로 연계","textPreview":"관제 명령부터 협동로봇 위치 보정까지 단일 시퀀스로 연계","textChars":31,"textLines":1,"bbox":[42,57,700,24]}
+{"kind":"textbox","id":"sh/5c3ihsji","slide":2,"text":"Confidential","textPreview":"Confidential","textChars":12,"textLines":1,"bbox":[860,14,140,16]}
+{"kind":"textbox","id":"sh/u5cz2tkv","slide":2,"text":"NAMUGA AMR","textPreview":"NAMUGA AMR","textChars":10,"textLines":1,"bbox":[820,30,180,23]}
+{"kind":"textbox","id":"sh/v6l0by1g","slide":2,"text":"Precision Handling System","textPreview":"Precision Handling System","textChars":25,"textLines":1,"bbox":[820,50,180,15]}
+{"kind":"shape","id":"sh/w7uh4321","slide":2,"bbox":[40,72,960,0]}
+{"kind":"shape","id":"sh/h83id8jm","slide":2,"bbox":[1012,95,8,545]}
+{"kind":"textbox","id":"sh/mhszytkz","slide":2,"text":"NAMUGA AMR","textPreview":"NAMUGA AMR","textChars":10,"textLines":1,"bbox":[996,240,42,200]}
+{"kind":"textbox","id":"sh/72107y1k","slide":2,"text":"Copyright © NAMUGA. 2026. All Rights Reserved.","textPreview":"Copyright © NAMUGA. 2026. All Rights Reserved.","textChars":46,"textLines":1,"bbox":[40,690,470,16]}
+{"kind":"textbox","id":"sh/nut03elc","slide":2,"text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[973,690,27,16]}
+{"kind":"shape","id":"sh/2t0za9kr","slide":2,"bbox":[65,105,190,76]}
+{"kind":"textbox","id":"sh/pgbi5o3i","slide":2,"text":"ACS 관제 서버","textPreview":"ACS 관제 서버","textChars":9,"textLines":1,"bbox":[75,112,170,26]}
+{"kind":"textbox","id":"sh/ov2hcj2x","slide":2,"text":"moveCmd · actionCmd\nMQTT","textPreview":"moveCmd · actionCmd | MQTT","textChars":24,"textLines":2,"bbox":[75,140,170,32]}
+{"kind":"shape","id":"sh/bit07yl8","slide":2,"bbox":[352,94,375,98]}
+{"kind":"textbox","id":"sh/ahkjetk3","slide":2,"text":"AMR 통합 제어 PC","textPreview":"AMR 통합 제어 PC","textChars":12,"textLines":1,"bbox":[370,105,339,30]}
+{"kind":"textbox","id":"sh/xkbi9o3e","slide":2,"text":"Main Sequence · 상태 관리 · 오프셋 계산 · 이력","textPreview":"Main Sequence · 상태 관리 · 오프셋 계산 · 이력","textChars":35,"textLines":1,"bbox":[370,140,339,30]}
+{"kind":"shape","id":"sh/wj21g32t","slide":2,"bbox":[820,105,170,76]}
+{"kind":"textbox","id":"sh/rmp0vul4","slide":2,"text":"AMR Controller","textPreview":"AMR Controller","textChars":14,"textLines":1,"bbox":[832,113,146,24]}
+{"kind":"textbox","id":"sh/qlgz2pkj","slide":2,"text":"Node 이동 · 정차\n상태 / 알람","textPreview":"Node 이동 · 정차 | 상태 / 알람","textChars":20,"textLines":2,"bbox":[832,140,146,30]}
+{"kind":"shape","id":"sh/uho3ax47","slide":2,"bbox":[274,127,54,24]}
+{"kind":"textbox","id":"sh/vixk325s","slide":2,"text":"Wi-Fi / MQTT","textPreview":"Wi-Fi / MQTT","textChars":12,"textLines":1,"bbox":[265,103,73,18]}
+{"kind":"shape","id":"sh/gj6lc7md","slide":2,"bbox":[747,127,54,24]}
+{"kind":"textbox","id":"sh/hkfm5cny","slide":2,"text":"Modbus TCP","textPreview":"Modbus TCP","textChars":10,"textLines":1,"bbox":[738,103,75,18]}
+{"kind":"shape","id":"sh/6do36x4b","slide":2,"bbox":[65,224,24,24]}
+{"kind":"textbox","id":"sh/7exkz25g","slide":2,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[65,224,24,24]}
+{"kind":"textbox","id":"sh/8f6l8nm1","slide":2,"text":"통합 제어 PC 내부 서비스","textPreview":"통합 제어 PC 내부 서비스","textChars":15,"textLines":1,"bbox":[99,224,316,24]}
+{"kind":"shape","id":"sh/tgf21snm","slide":2,"bbox":[65,270,208,70]}
+{"kind":"textbox","id":"sh/yp432d4z","slide":2,"text":"MainSequence","textPreview":"MainSequence","textChars":12,"textLines":1,"bbox":[77,278,184,22]}
+{"kind":"textbox","id":"sh/jadkvi5k","slide":2,"text":"10단계 작업 상태머신","textPreview":"10단계 작업 상태머신","textChars":12,"textLines":1,"bbox":[77,304,184,24]}
+{"kind":"shape","id":"sh/1g3exkbe","slide":2,"bbox":[278,295,20,18]}
+{"kind":"shape","id":"sh/0fuxofat","slide":2,"bbox":[305,270,208,70]}
+{"kind":"textbox","id":"sh/zelwvat8","slide":2,"text":"CameraService","textPreview":"CameraService","textChars":13,"textLines":1,"bbox":[317,278,184,22]}
+{"kind":"textbox","id":"sh/edcfm5sn","slide":2,"text":"RGB·Depth / QR 좌표","textPreview":"RGB·Depth / QR 좌표","textChars":17,"textLines":1,"bbox":[317,304,184,24]}
+{"kind":"shape","id":"sh/dc3et0b2","slide":2,"bbox":[518,295,20,18]}
+{"kind":"shape","id":"sh/cbuxkvax","slide":2,"bbox":[545,270,208,70]}
+{"kind":"textbox","id":"sh/rqlwratc","slide":2,"text":"Offset Service","textPreview":"Offset Service","textChars":14,"textLines":1,"bbox":[557,278,184,22]}
+{"kind":"textbox","id":"sh/qpsfi5sr","slide":2,"text":"Port + Model 보정","textPreview":"Port + Model 보정","textChars":15,"textLines":1,"bbox":[557,304,184,24]}
+{"kind":"shape","id":"sh/pojep0b6","slide":2,"bbox":[758,295,20,18]}
+{"kind":"shape","id":"sh/4naxgval","slide":2,"bbox":[785,270,208,70]}
+{"kind":"textbox","id":"sh/4fixgv6l","slide":2,"text":"CobotService","textPreview":"CobotService","textChars":12,"textLines":1,"bbox":[797,278,184,22]}
+{"kind":"textbox","id":"sh/5gbe907q","slide":2,"text":"DI/DO·AI 레지스터","textPreview":"DI/DO·AI 레지스터","textChars":13,"textLines":1,"bbox":[797,304,184,24]}
+{"kind":"shape","id":"sh/id0fe5of","slide":2,"bbox":[65,378,24,24]}
+{"kind":"textbox","id":"sh/je9w7ap0","slide":2,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[65,378,24,24]}
+{"kind":"textbox","id":"sh/sj2xkf6h","slide":2,"text":"현장 장치 및 데이터 흐름","textPreview":"현장 장치 및 데이터 흐름","textChars":14,"textLines":1,"bbox":[99,378,316,24]}
+{"kind":"shape","id":"sh/t4bedkn2","slide":2,"bbox":[65,424,220,104]}
+{"kind":"textbox","id":"sh/6hkfi5ob","slide":2,"text":"RGB-D 카메라","textPreview":"RGB-D 카메라","textChars":9,"textLines":1,"bbox":[80,435,190,25]}
+{"kind":"textbox","id":"sh/ritwba5w","slide":2,"text":"QR 중심점 · 회전각\nDepth 기반 실제 거리","textPreview":"QR 중심점 · 회전각 | Depth 기반 실제 거리","textChars":27,"textLines":2,"bbox":[80,466,190,42]}
+{"kind":"shape","id":"sh/8nyd8b6d","slide":2,"bbox":[430,424,220,104]}
+{"kind":"textbox","id":"sh/98re1g7y","slide":2,"text":"협동로봇","textPreview":"협동로봇","textChars":4,"textLines":1,"bbox":[445,435,190,25]}
+{"kind":"textbox","id":"sh/b2x07epg","slide":2,"text":"AI0: dx · AI1: dy\nAI2: dθ ×100","textPreview":"AI0: dx · AI1: dy | AI2: dθ ×100","textChars":30,"textLines":2,"bbox":[445,466,190,42]}
+{"kind":"shape","id":"sh/q1ozet8v","slide":2,"bbox":[795,424,195,104]}
+{"kind":"textbox","id":"sh/x4fi9o76","slide":2,"text":"I/O · 안전 장치","textPreview":"I/O · 안전 장치","textChars":11,"textLines":1,"bbox":[808,435,169,25]}
+{"kind":"textbox","id":"sh/c36hgjq1","slide":2,"text":"Busy · Complete · Error\n인터록 / 비상정지","textPreview":"Busy · Complete · Error | 인터록 / 비상정지","textChars":34,"textLines":2,"bbox":[808,466,169,42]}
+{"kind":"shape","id":"sh/3ydg3e94","slide":2,"bbox":[313,463,82,24]}
+{"kind":"textbox","id":"sh/2d4za98j","slide":2,"text":"좌표 보정값","textPreview":"좌표 보정값","textChars":6,"textLines":1,"bbox":[318,440,70,18]}
+{"kind":"shape","id":"sh/p0fi5o7a","slide":2,"bbox":[678,463,82,24]}
+{"kind":"textbox","id":"sh/oz6hcjqp","slide":2,"text":"동작 상태","textPreview":"동작 상태","textChars":5,"textLines":1,"bbox":[683,440,70,18]}
+{"kind":"shape","id":"sh/fadgzu98","slide":2,"bbox":[65,570,925,86]}
+{"kind":"textbox","id":"sh/e94z698n","slide":2,"text":"핵심 제어 경계","textPreview":"핵심 제어 경계","textChars":8,"textLines":1,"bbox":[82,580,150,22]}
+{"kind":"textbox","id":"sh/i5kzipsf","slide":2,"text":"AMR의 절대 정차 위치는 이동 제어가 담당하고, 매거진 작업점의 잔여 오차는 QR 좌표를 읽어 협동로봇의 접근 경로에 반영합니다.","textPreview":"AMR의 절대 정차 위치는 이동 제어가 담당하고, 매거진 작업점의 잔여 오차는 QR 좌표를 읽어 협동로봇의 접근 경로에 반영합니다.","textChars":73,"textLines":1,"bbox":[82,607,875,32]}
+{"kind":"notes","id":"nt/buzqzw","slide":2,"text":"Sources: AMR/Service/MoveSequenceRunner.cs, CameraService.cs, CobotService.cs; docs/MainSequence.md; docs/cobot_interface.md."}
+{"kind":"slide","id":"sl/1fklqx","slide":3,"title":"±50 mm 정차 오차를 흡수하는 2단계 위치 결정","textShapes":28}
+{"kind":"textbox","id":"sh/xsj2t4rq","slide":3,"text":"±50 mm 정차 오차를 흡수하는 2단계 위치 결정","textPreview":"±50 mm 정차 오차를 흡수하는 2단계 위치 결정","textChars":28,"textLines":1,"bbox":[40,20,720,42]}
+{"kind":"textbox","id":"sh/ap83yp8z","slide":3,"text":"AMR은 작업 가능 영역에 진입하고, QR 보정이 실제 PICKUP / PLACE 기준점을 복원","textPreview":"AMR은 작업 가능 영역에 진입하고, QR 보정이 실제 PICKUP / PLACE 기준점을 복원","textChars":53,"textLines":1,"bbox":[42,57,700,24]}
+{"kind":"textbox","id":"sh/bqhkru9k","slide":3,"text":"Confidential","textPreview":"Confidential","textChars":12,"textLines":1,"bbox":[860,14,140,16]}
+{"kind":"textbox","id":"sh/onqlwfqt","slide":3,"text":"NAMUGA AMR","textPreview":"NAMUGA AMR","textChars":10,"textLines":1,"bbox":[820,30,180,23]}
+{"kind":"textbox","id":"sh/9oz2pkre","slide":3,"text":"Precision Handling System","textPreview":"Precision Handling System","textChars":25,"textLines":1,"bbox":[820,50,180,15]}
+{"kind":"shape","id":"sh/ml83up83","slide":3,"bbox":[40,72,960,0]}
+{"kind":"shape","id":"sh/nmhkna9o","slide":3,"bbox":[1012,95,8,545]}
+{"kind":"textbox","id":"sh/sjul8jqd","slide":3,"text":"NAMUGA AMR","textPreview":"NAMUGA AMR","textChars":10,"textLines":1,"bbox":[996,240,42,200]}
+{"kind":"textbox","id":"sh/tk3m1ory","slide":3,"text":"Copyright © NAMUGA. 2026. All Rights Reserved.","textPreview":"Copyright © NAMUGA. 2026. All Rights Reserved.","textChars":46,"textLines":1,"bbox":[40,690,470,16]}
+{"kind":"textbox","id":"sh/xkredw7i","slide":3,"text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[973,690,27,16]}
+{"kind":"shape","id":"sh/wjyd4rqx","slide":3,"bbox":[65,105,24,24]}
+{"kind":"textbox","id":"sh/vypwb6pc","slide":3,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[65,105,24,24]}
+{"kind":"textbox","id":"sh/axgv218r","slide":3,"text":"1차 위치 결정: AMR 정차","textPreview":"1차 위치 결정: AMR 정차","textChars":16,"textLines":1,"bbox":[99,105,316,24]}
+{"kind":"shape","id":"sh/9w7e9w76","slide":3,"bbox":[75,155,395,330]}
+{"kind":"shape","id":"sh/8vyd0rql","slide":3,"bbox":[270,190,0,235]}
+{"kind":"shape","id":"sh/nupw7mpg","slide":3,"bbox":[150,307,240,0]}
+{"kind":"shape","id":"sh/mtgvyh8v","slide":3,"bbox":[195,232,150,150]}
+{"kind":"textbox","id":"sh/tsbelg7q","slide":3,"text":"±50 mm\n정차 오차 영역","textPreview":"±50 mm | 정차 오차 영역","textChars":15,"textLines":2,"bbox":[205,276,130,62]}
+{"kind":"shape","id":"sh/sr2xcbq5","slide":3,"bbox":[247,284,46,46]}
+{"kind":"textbox","id":"sh/cvahoze1","slide":3,"text":"AMR","textPreview":"AMR","textChars":3,"textLines":1,"bbox":[249,296,42,20]}
+{"kind":"textbox","id":"sh/dwjyh4fm","slide":3,"text":"목표 노드","textPreview":"목표 노드","textChars":5,"textLines":1,"bbox":[243,193,54,20]}
+{"kind":"textbox","id":"sh/qt8fmpwb","slide":3,"text":"주행 제어는 QR 카메라가\n대상을 볼 수 있는 범위까지 정차","textPreview":"주행 제어는 QR 카메라가 | 대상을 볼 수 있는 범위까지 정차","textChars":33,"textLines":2,"bbox":[105,420,335,46]}
+{"kind":"shape","id":"sh/ruhgfuxw","slide":3,"bbox":[500,285,55,28]}
+{"kind":"textbox","id":"sh/4rqxkfe5","slide":3,"text":"잔여 오차\n측정","textPreview":"잔여 오차 | 측정","textChars":8,"textLines":2,"bbox":[493,322,68,42]}
+{"kind":"shape","id":"sh/pszydkfq","slide":3,"bbox":[585,105,24,24]}
+{"kind":"textbox","id":"sh/258fi5gz","slide":3,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[585,105,24,24]}
+{"kind":"textbox","id":"sh/3qhgbaxk","slide":3,"text":"2차 위치 결정: QR 비전 보정","textPreview":"2차 위치 결정: QR 비전 보정","textChars":18,"textLines":1,"bbox":[619,105,366,24]}
+{"kind":"shape","id":"sh/g3qxgfyt","slide":3,"bbox":[585,155,405,330]}
+{"kind":"shape","id":"sh/h4zy9kfe","slide":3,"bbox":[620,188,220,180]}
+{"kind":"shape","id":"sh/jyxgjahg","slide":3,"bbox":[730,205,0,145]}
+{"kind":"shape","id":"sh/yxozq50v","slide":3,"bbox":[650,278,160,0]}
+{"kind":"textbox","id":"sh/l0fyl0zm","slide":3,"text":"카메라 중심","textPreview":"카메라 중심","textChars":6,"textLines":1,"bbox":[663,207,135,20]}
+{"kind":"shape","id":"sh/kz6hsfi1","slide":3,"bbox":[748,244,58,58]}
+{"kind":"shape","id":"sh/72x0nahc","slide":3,"bbox":[762,258,12,12]}
+{"kind":"shape","id":"sh/61ozu50r","slide":3,"bbox":[780,276,12,12]}
+{"kind":"shape","id":"sh/tozipkzi","slide":3,"bbox":[730,273,47,5]}
+{"kind":"textbox","id":"sh/836hwfix","slide":3,"text":"QR 중심","textPreview":"QR 중심","textChars":5,"textLines":1,"bbox":[748,307,62,18]}
+{"kind":"textbox","id":"sh/fqh0ruho","slide":3,"text":"Δx, Δy","textPreview":"Δx, Δy","textChars":6,"textLines":1,"bbox":[748,217,64,18]}
+{"kind":"textbox","id":"sh/up8zyp03","slide":3,"text":"θ","textPreview":"θ","textChars":1,"textLines":1,"bbox":[812,251,18,20]}
+{"kind":"shape","id":"sh/el0baxcb","slide":3,"bbox":[862,188,92,180]}
+{"kind":"textbox","id":"sh/z69sjitw","slide":3,"text":"산출값","textPreview":"산출값","textChars":3,"textLines":1,"bbox":[874,202,68,20]}
+{"kind":"textbox","id":"sh/07itcnuh","slide":3,"text":"dx [mm]\ndy [mm]\ndθ [deg]","textPreview":"dx [mm] | dy [mm] | dθ [deg]","textChars":24,"textLines":3,"bbox":[874,238,68,88]}
+{"kind":"textbox","id":"sh/18ralsb2","slide":3,"text":"협동로봇\n경로 보정","textPreview":"협동로봇 | 경로 보정","textChars":10,"textLines":2,"bbox":[874,324,68,34]}
+{"kind":"textbox","id":"sh/m90bexcn","slide":3,"text":"카메라 좌표에서 측정한 잔여 위치·각도 오차를\n협동로봇의 PICKUP / PLACE 기준 위치에 합산","textPreview":"카메라 좌표에서 측정한 잔여 위치·각도 오차를 | 협동로봇의 PICKUP / PLACE 기준 위치에 합산","textChars":56,"textLines":2,"bbox":[615,398,345,54]}
+{"kind":"shape","id":"sh/na9sn2t8","slide":3,"bbox":[75,530,915,118]}
+{"kind":"textbox","id":"sh/obitg7ad","slide":3,"text":"정밀도 확보 조건","textPreview":"정밀도 확보 조건","textChars":9,"textLines":1,"bbox":[92,544,160,24]}
+{"kind":"textbox","id":"sh/9cbapcby","slide":3,"text":"① QR이 카메라 시야와 유효 Depth 범위 안에 위치   ② QR 좌표계와 로봇 작업 좌표계의 부호·축 방향 일치   ③ 보정 후 접근 경로가 기구 간섭 없이 실행","textPreview":"① QR이 카메라 시야와 유효 Depth 범위 안에 위치   ② QR 좌표계와 로봇 작업 좌표계의 부호·축 방향 일치   ③ 보정 후 접근 경로가 기구 간섭 없이 실행","textChars":93,"textLines":1,"bbox":[92,577,870,28]}
+{"kind":"textbox","id":"sh/2dwr2dc3","slide":3,"text":"±50 mm는 AMR 정차 허용 범위이며, 최종 작업 정밀도는 카메라 보정·로봇 반복도·치공구 공차를 포함해 POC에서 확인합니다.","textPreview":"±50 mm는 AMR 정차 허용 범위이며, 최종 작업 정밀도는 카메라 보정·로봇 반복도·치공구 공차를 포함해 POC에서 확인합니다.","textChars":73,"textLines":1,"bbox":[92,611,870,25]}
+{"kind":"notes","id":"nt/1fklqx","slide":3,"text":"±50 mm는 사용자가 요청한 정차 오차 범위. 최종 정밀도 수치는 제공되지 않아 POC 검증 항목으로 명시함."}
+{"kind":"slide","id":"sl/adan3t","slide":4,"title":"QR 좌표 산출 및 보정값 생성","textShapes":57}
+{"kind":"textbox","id":"sh/5c72lkry","slide":4,"text":"QR 좌표 산출 및 보정값 생성","textPreview":"QR 좌표 산출 및 보정값 생성","textChars":17,"textLines":1,"bbox":[40,20,720,42]}
+{"kind":"textbox","id":"sh/ipwjqp8n","slide":4,"text":"RGB-D 영상의 픽셀 오차를 실제 거리로 변환하고 포트·모델별 편차를 추가 보정","textPreview":"RGB-D 영상의 픽셀 오차를 실제 거리로 변환하고 포트·모델별 편차를 추가 보정","textChars":45,"textLines":1,"bbox":[42,57,700,24]}
+{"kind":"textbox","id":"sh/jq5kju98","slide":4,"text":"Confidential","textPreview":"Confidential","textChars":12,"textLines":1,"bbox":[860,14,140,16]}
+{"kind":"textbox","id":"sh/wne1ofqh","slide":4,"text":"NAMUGA AMR","textPreview":"NAMUGA AMR","textChars":10,"textLines":1,"bbox":[820,30,180,23]}
+{"kind":"textbox","id":"sh/xon2hkr2","slide":4,"text":"Precision Handling System","textPreview":"Precision Handling System","textChars":25,"textLines":1,"bbox":[820,50,180,15]}
+{"kind":"shape","id":"sh/alwjm58b","slide":4,"bbox":[40,72,960,0]}
+{"kind":"shape","id":"sh/bm5kfa9w","slide":4,"bbox":[1012,95,8,545]}
+{"kind":"textbox","id":"sh/oje1kfql","slide":4,"text":"NAMUGA AMR","textPreview":"NAMUGA AMR","textChars":10,"textLines":1,"bbox":[996,240,42,200]}
+{"kind":"textbox","id":"sh/9knid0rq","slide":4,"text":"Copyright © NAMUGA. 2026. All Rights Reserved.","textPreview":"Copyright © NAMUGA. 2026. All Rights Reserved.","textChars":46,"textLines":1,"bbox":[40,690,470,16]}
+{"kind":"textbox","id":"sh/t8fapsr6","slide":4,"text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[973,690,27,16]}
+{"kind":"shape","id":"sh/s76tw7al","slide":4,"bbox":[55,105,172,112]}
+{"kind":"textbox","id":"sh/r6dsn290","slide":4,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[67,115,40,20]}
+{"kind":"textbox","id":"sh/654buxsf","slide":4,"text":"QR 검출","textPreview":"QR 검출","textChars":5,"textLines":1,"bbox":[67,140,148,24]}
+{"kind":"textbox","id":"sh/54valsru","slide":4,"text":"원본·이진화·적응형\n전처리로 인식 안정화","textPreview":"원본·이진화·적응형 | 전처리로 인식 안정화","textChars":22,"textLines":2,"bbox":[67,170,148,35]}
+{"kind":"shape","id":"sh/43m9sna9","slide":4,"bbox":[233,148,16,16]}
+{"kind":"shape","id":"sh/j2dsji9o","slide":4,"bbox":[255,105,172,112]}
+{"kind":"textbox","id":"sh/i14rqdsj","slide":4,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[267,115,40,20]}
+{"kind":"textbox","id":"sh/x0vah8ry","slide":4,"text":"중심·각도","textPreview":"중심·각도","textChars":5,"textLines":1,"bbox":[267,140,148,24]}
+{"kind":"textbox","id":"sh/wzm9onad","slide":4,"text":"4개 꼭짓점으로\n중심점과 회전각 계산","textPreview":"4개 꼭짓점으로 | 중심점과 회전각 계산","textChars":20,"textLines":2,"bbox":[267,170,148,35]}
+{"kind":"shape","id":"sh/oj6t4ni9","slide":4,"bbox":[433,148,16,16]}
+{"kind":"shape","id":"sh/9kfadsju","slide":4,"bbox":[455,105,172,112]}
+{"kind":"textbox","id":"sh/mhob2d03","slide":4,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[467,115,40,20]}
+{"kind":"textbox","id":"sh/nixsbi1o","slide":4,"text":"Depth 변환","textPreview":"Depth 변환","textChars":8,"textLines":1,"bbox":[467,140,148,24]}
+{"kind":"textbox","id":"sh/0f6t03ix","slide":4,"text":"중심 주변 5×5\nDepth 중앙값 사용","textPreview":"중심 주변 5×5 | Depth 중앙값 사용","textChars":22,"textLines":2,"bbox":[467,170,148,35]}
+{"kind":"shape","id":"sh/1gfa98ji","slide":4,"bbox":[633,148,16,16]}
+{"kind":"shape","id":"sh/etoryt07","slide":4,"bbox":[655,105,172,112]}
+{"kind":"textbox","id":"sh/zexs7y1c","slide":4,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[667,115,40,20]}
+{"kind":"textbox","id":"sh/kbqtc7ih","slide":4,"text":"5회 샘플링","textPreview":"5회 샘플링","textChars":6,"textLines":1,"bbox":[667,140,148,24]}
+{"kind":"textbox","id":"sh/5cjalczm","slide":4,"text":"200 ms 안정화 후\n100 ms 간격 중앙값","textPreview":"200 ms 안정화 후 | 100 ms 간격 중앙값","textChars":26,"textLines":2,"bbox":[667,170,148,35]}
+{"kind":"shape","id":"sh/f6lwb614","slide":4,"bbox":[833,148,16,16]}
+{"kind":"shape","id":"sh/u5cv21kj","slide":4,"bbox":[855,105,172,112]}
+{"kind":"textbox","id":"sh/h83edgju","slide":4,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[867,115,40,20]}
+{"kind":"textbox","id":"sh/g7ud4b2p","slide":4,"text":"오프셋 합산","textPreview":"오프셋 합산","textChars":6,"textLines":1,"bbox":[867,140,148,24]}
+{"kind":"textbox","id":"sh/3alwf610","slide":4,"text":"PortOffset + ModelOffset\n포함 후 레지스터 전달","textPreview":"PortOffset + ModelOffset | 포함 후 레지스터 전달","textChars":37,"textLines":2,"bbox":[867,170,148,35]}
+{"kind":"shape","id":"sh/29cv61kf","slide":4,"bbox":[65,254,24,24]}
+{"kind":"textbox","id":"sh/pcnehgj6","slide":4,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[65,254,24,24]}
+{"kind":"textbox","id":"sh/4bed8b2l","slide":4,"text":"실거리 변환","textPreview":"실거리 변환","textChars":6,"textLines":1,"bbox":[99,254,266,24]}
+{"kind":"shape","id":"sh/je1c3mlw","slide":4,"bbox":[65,295,440,140]}
+{"kind":"textbox","id":"sh/idsvuhkb","slide":4,"text":"dx = (uQR − uc) × Z / fx","textPreview":"dx = (uQR − uc) × Z / fx","textChars":24,"textLines":1,"bbox":[92,315,390,34]}
+{"kind":"textbox","id":"sh/a9wn6lwj","slide":4,"text":"dy = (vQR − vc) × Z / fy","textPreview":"dy = (vQR − vc) × Z / fy","textChars":24,"textLines":1,"bbox":[92,355,390,34]}
+{"kind":"textbox","id":"sh/va54zqxo","slide":4,"text":"Z: QR 중심 Depth 중앙값    fx, fy: 카메라 초점거리","textPreview":"Z: QR 중심 Depth 중앙값    fx, fy: 카메라 초점거리","textChars":38,"textLines":1,"bbox":[92,397,390,22]}
+{"kind":"shape","id":"sh/wvy58be9","slide":4,"bbox":[545,254,24,24]}
+{"kind":"textbox","id":"sh/xw7m1gfu","slide":4,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[545,254,24,24]}
+{"kind":"textbox","id":"sh/ixgnalwf","slide":4,"text":"최종 보정값","textPreview":"최종 보정값","textChars":6,"textLines":1,"bbox":[579,254,266,24]}
+{"kind":"shape","id":"sh/jyp43qx0","slide":4,"bbox":[545,295,445,140]}
+{"kind":"textbox","id":"sh/kzy5cvel","slide":4,"text":"보정값 = QR 측정값 + 포트 보정 + 모델 보정","textPreview":"보정값 = QR 측정값 + 포트 보정 + 모델 보정","textChars":28,"textLines":1,"bbox":[568,316,400,32]}
+{"kind":"textbox","id":"sh/507m50f6","slide":4,"text":"PortOffset","textPreview":"PortOffset","textChars":10,"textLines":1,"bbox":[578,365,105,28]}
+{"kind":"textbox","id":"sh/61gne5wr","slide":4,"text":"노드·LEFT/RIGHT","textPreview":"노드·LEFT/RIGHT","textChars":13,"textLines":1,"bbox":[578,393,105,18]}
+{"kind":"textbox","id":"sh/72947axw","slide":4,"text":"+","textPreview":"+","textChars":1,"textLines":1,"bbox":[690,371,28,28]}
+{"kind":"textbox","id":"sh/hwbqx4ze","slide":4,"text":"ModelOffset","textPreview":"ModelOffset","textChars":11,"textLines":1,"bbox":[724,365,105,28]}
+{"kind":"textbox","id":"sh/gv2p4zyt","slide":4,"text":"LOAD / UNLOAD","textPreview":"LOAD / UNLOAD","textChars":13,"textLines":1,"bbox":[724,393,105,18]}
+{"kind":"textbox","id":"sh/fut8vuh8","slide":4,"text":"=","textPreview":"=","textChars":1,"textLines":1,"bbox":[838,371,28,28]}
+{"kind":"textbox","id":"sh/ut072pgn","slide":4,"text":"AI0 / AI1 / AI2","textPreview":"AI0 / AI1 / AI2","textChars":15,"textLines":1,"bbox":[870,365,105,28]}
+{"kind":"textbox","id":"sh/pkbq14za","slide":4,"text":"mm / mm / 0.01°","textPreview":"mm / mm / 0.01°","textChars":15,"textLines":1,"bbox":[870,393,105,18]}
+{"kind":"shape","id":"sh/4z2p8zyp","slide":4,"bbox":[65,474,24,24]}
+{"kind":"textbox","id":"sh/3yt8zuh4","slide":4,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[65,474,24,24]}
+{"kind":"textbox","id":"sh/2xk769gz","slide":4,"text":"신호 인터페이스","textPreview":"신호 인터페이스","textChars":8,"textLines":1,"bbox":[99,474,266,24]}
+{"kind":"shape","id":"sh/dovq5ofm","slide":4,"bbox":[65,515,925,122]}
+{"kind":"shape","id":"sh/cnmpcjy1","slide":4,"bbox":[65,515,925,30]}
+{"kind":"textbox","id":"sh/cru98n6x","slide":4,"text":"레지스터","textPreview":"레지스터","textChars":4,"textLines":1,"bbox":[80,519,135,22]}
+{"kind":"textbox","id":"sh/xs3ahsni","slide":4,"text":"값","textPreview":"값","textChars":1,"textLines":1,"bbox":[235,519,100,22]}
+{"kind":"textbox","id":"sh/a5cr6do7","slide":4,"text":"단위","textPreview":"단위","textChars":2,"textLines":1,"bbox":[355,519,110,22]}
+{"kind":"textbox","id":"sh/b6lsfi5c","slide":4,"text":"적용 내용","textPreview":"적용 내용","textChars":5,"textLines":1,"bbox":[485,519,475,22]}
+{"kind":"textbox","id":"sh/kvu9c769","slide":4,"text":"AI0","textPreview":"AI0","textChars":3,"textLines":1,"bbox":[80,548,135,28]}
+{"kind":"textbox","id":"sh/lw3alcnu","slide":4,"text":"dx","textPreview":"dx","textChars":2,"textLines":1,"bbox":[235,548,100,28]}
+{"kind":"textbox","id":"sh/ytcraxo3","slide":4,"text":"mm","textPreview":"mm","textChars":2,"textLines":1,"bbox":[355,548,110,28]}
+{"kind":"textbox","id":"sh/zulsj25o","slide":4,"text":"카메라 X 방향 + 포트/모델 보정","textPreview":"카메라 X 방향 + 포트/모델 보정","textChars":19,"textLines":1,"bbox":[485,548,475,28]}
+{"kind":"shape","id":"sh/0za9036p","slide":4,"bbox":[66,576,923,28]}
+{"kind":"textbox","id":"sh/10ja98na","slide":4,"text":"AI1","textPreview":"AI1","textChars":3,"textLines":1,"bbox":[80,576,135,28]}
+{"kind":"textbox","id":"sh/3694vat4","slide":4,"text":"dy","textPreview":"dy","textChars":2,"textLines":1,"bbox":[235,576,100,28]}
+{"kind":"textbox","id":"sh/250325cj","slide":4,"text":"mm","textPreview":"mm","textChars":2,"textLines":1,"bbox":[355,576,110,28]}
+{"kind":"textbox","id":"sh/psrmx0ba","slide":4,"text":"카메라 Y 방향 + 포트/모델 보정","textPreview":"카메라 Y 방향 + 포트/모델 보정","textChars":19,"textLines":1,"bbox":[485,576,475,28]}
+{"kind":"textbox","id":"sh/47il4fup","slide":4,"text":"AI2","textPreview":"AI2","textChars":3,"textLines":1,"bbox":[80,604,135,28]}
+{"kind":"textbox","id":"sh/f294rqt8","slide":4,"text":"dθ","textPreview":"dθ","textChars":2,"textLines":1,"bbox":[235,604,100,28]}
+{"kind":"textbox","id":"sh/u1g3ylcn","slide":4,"text":"0.01°","textPreview":"0.01°","textChars":5,"textLines":1,"bbox":[355,604,110,28]}
+{"kind":"textbox","id":"sh/h4rmt0by","slide":4,"text":"QR 상단 변 회전각 + 포트/모델 보정","textPreview":"QR 상단 변 회전각 + 포트/모델 보정","textChars":22,"textLines":1,"bbox":[485,604,475,28]}
+{"kind":"notes","id":"nt/adan3t","slide":4,"text":"Sources: CameraService.cs lines implementing pinhole conversion, 5×5 depth median and preprocessing; MoveSequenceRunner.cs implementing 5 samples, medians, PortOffset/ModelOffset and AI0–AI2 writes."}
+{"kind":"slide","id":"sl/cdnnhg","slide":5,"title":"QR 기반 매거진 PICKUP / PLACE 시퀀스","textShapes":49}
+{"kind":"textbox","id":"sh/wfuhsje1","slide":5,"text":"QR 기반 매거진 PICKUP / PLACE 시퀀스","textPreview":"QR 기반 매거진 PICKUP / PLACE 시퀀스","textChars":28,"textLines":1,"bbox":[40,20,720,42]}
+{"kind":"textbox","id":"sh/vel0zexg","slide":5,"text":"작업 직전에 QR을 다시 읽고 보정값을 적용해 정차 편차와 작업별 편차를 분리","textPreview":"작업 직전에 QR을 다시 읽고 보정값을 적용해 정차 편차와 작업별 편차를 분리","textChars":43,"textLines":1,"bbox":[42,57,700,24]}
+{"kind":"textbox","id":"sh/udczq9wv","slide":5,"text":"Confidential","textPreview":"Confidential","textChars":12,"textLines":1,"bbox":[860,14,140,16]}
+{"kind":"textbox","id":"sh/54ni5ofi","slide":5,"text":"NAMUGA AMR","textPreview":"NAMUGA AMR","textChars":10,"textLines":1,"bbox":[820,30,180,23]}
+{"kind":"textbox","id":"sh/43e1wjex","slide":5,"text":"Precision Handling System","textPreview":"Precision Handling System","textChars":25,"textLines":1,"bbox":[820,50,180,15]}
+{"kind":"shape","id":"sh/ji503exc","slide":5,"bbox":[40,72,960,0]}
+{"kind":"shape","id":"sh/ihwju9wr","slide":5,"bbox":[1012,95,8,545]}
+{"kind":"textbox","id":"sh/l8jitkfe","slide":5,"text":"NAMUGA AMR","textPreview":"NAMUGA AMR","textChars":10,"textLines":1,"bbox":[996,240,42,200]}
+{"kind":"textbox","id":"sh/knahkzet","slide":5,"text":"Copyright © NAMUGA. 2026. All Rights Reserved.","textPreview":"Copyright © NAMUGA. 2026. All Rights Reserved.","textChars":46,"textLines":1,"bbox":[40,690,470,16]}
+{"kind":"textbox","id":"sh/e98n6tc3","slide":5,"text":"5","textPreview":"5","textChars":1,"textLines":1,"bbox":[973,690,27,16]}
+{"kind":"shape","id":"sh/fa1ozydo","slide":5,"bbox":[43,128,122,128]}
+{"kind":"textbox","id":"sh/gvap83ut","slide":5,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[53,137,34,20]}
+{"kind":"textbox","id":"sh/1wj618ve","slide":5,"text":"이동 명령","textPreview":"이동 명령","textChars":5,"textLines":1,"bbox":[53,163,102,28]}
+{"kind":"textbox","id":"sh/2xs7adcz","slide":5,"text":"ACS moveCmd\nNode · Port · Job","textPreview":"ACS moveCmd | Node · Port · Job","textChars":29,"textLines":2,"bbox":[53,198,102,44]}
+{"kind":"shape","id":"sh/3y1o3idk","slide":5,"bbox":[169,183,14,18]}
+{"kind":"shape","id":"sh/ozapcnu5","slide":5,"bbox":[188,128,122,128]}
+{"kind":"textbox","id":"sh/p0j65svq","slide":5,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[198,137,34,20]}
+{"kind":"textbox","id":"sh/q1s7edcb","slide":5,"text":"AMR 이동","textPreview":"AMR 이동","textChars":6,"textLines":1,"bbox":[198,163,102,28]}
+{"kind":"textbox","id":"sh/b2lo7idg","slide":5,"text":"목표 노드 도착\n±50 mm 범위","textPreview":"목표 노드 도착 | ±50 mm 범위","textChars":18,"textLines":2,"bbox":[198,198,102,44]}
+{"kind":"shape","id":"sh/n6lovi9o","slide":5,"bbox":[314,183,14,18]}
+{"kind":"shape","id":"sh/m5cnmxs3","slide":5,"bbox":[333,128,122,128]}
+{"kind":"textbox","id":"sh/9s36xsru","slide":5,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[343,137,34,20]}
+{"kind":"textbox","id":"sh/87u5ona9","slide":5,"text":"QR 스캔 위치","textPreview":"QR 스캔 위치","textChars":8,"textLines":1,"bbox":[343,163,102,28]}
+{"kind":"textbox","id":"sh/z2l4rits","slide":5,"text":"협동로봇 DI16/17\n카메라 시야 정렬","textPreview":"협동로봇 DI16/17 | 카메라 시야 정렬","textChars":22,"textLines":2,"bbox":[343,198,102,44]}
+{"kind":"shape","id":"sh/y1cnids7","slide":5,"bbox":[459,183,14,18]}
+{"kind":"shape","id":"sh/l436tsri","slide":5,"bbox":[478,128,122,128]}
+{"kind":"textbox","id":"sh/03u5knad","slide":5,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[488,137,34,20]}
+{"kind":"textbox","id":"sh/by14nytg","slide":5,"text":"QR 보정 계산","textPreview":"QR 보정 계산","textChars":8,"textLines":1,"bbox":[488,163,102,28]}
+{"kind":"textbox","id":"sh/qxsnedsv","slide":5,"text":"dx · dy · dθ\n포트/모델 보정","textPreview":"dx · dy · dθ | 포트/모델 보정","textChars":21,"textLines":2,"bbox":[488,198,102,44]}
+{"kind":"shape","id":"sh/g3qlozqt","slide":5,"bbox":[604,183,14,18]}
+{"kind":"shape","id":"sh/14z2x4re","slide":5,"bbox":[623,128,122,128]}
+{"kind":"textbox","id":"sh/eho3m98n","slide":5,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[633,137,34,20]}
+{"kind":"textbox","id":"sh/fihkvu98","slide":5,"text":"PICKUP","textPreview":"PICKUP","textChars":6,"textLines":1,"bbox":[633,163,102,28]}
+{"kind":"textbox","id":"sh/o7qlsjq5","slide":5,"text":"보정 좌표로 접근\n그립 후 완료 확인","textPreview":"보정 좌표로 접근 | 그립 후 완료 확인","textChars":20,"textLines":2,"bbox":[633,198,102,44]}
+{"kind":"shape","id":"sh/p8z21o7a","slide":5,"bbox":[749,183,14,18]}
+{"kind":"shape","id":"sh/2583q98z","slide":5,"bbox":[768,128,122,128]}
+{"kind":"textbox","id":"sh/36hkzepk","slide":5,"text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[778,137,34,20]}
+{"kind":"textbox","id":"sh/4b61gfql","slide":5,"text":"PLACE","textPreview":"PLACE","textChars":5,"textLines":1,"bbox":[778,163,102,28]}
+{"kind":"textbox","id":"sh/5cf2pkr6","slide":5,"text":"대상 슬롯 이동\n놓기 후 완료 확인","textPreview":"대상 슬롯 이동 | 놓기 후 완료 확인","textChars":19,"textLines":2,"bbox":[778,198,102,44]}
+{"kind":"shape","id":"sh/xkb25ovm","slide":5,"bbox":[894,183,14,18]}
+{"kind":"shape","id":"sh/wjilcju1","slide":5,"bbox":[913,128,122,128]}
+{"kind":"textbox","id":"sh/bi9k3edw","slide":5,"text":"07","textPreview":"07","textChars":2,"textLines":1,"bbox":[923,137,34,20]}
+{"kind":"textbox","id":"sh/ah03a9cb","slide":5,"text":"작업 완료","textPreview":"작업 완료","textChars":5,"textLines":1,"bbox":[923,163,102,28]}
+{"kind":"textbox","id":"sh/9gr214vq","slide":5,"text":"상태 보고\n다음 명령 대기","textPreview":"상태 보고 | 다음 명령 대기","textChars":14,"textLines":2,"bbox":[923,198,102,44]}
+{"kind":"shape","id":"sh/ofil8zu5","slide":5,"bbox":[65,302,24,24]}
+{"kind":"textbox","id":"sh/ne9kzudk","slide":5,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[65,302,24,24]}
+{"kind":"textbox","id":"sh/md0369cz","slide":5,"text":"작업별 QR 재판독 원칙","textPreview":"작업별 QR 재판독 원칙","textChars":13,"textLines":1,"bbox":[99,302,316,24]}
+{"kind":"shape","id":"sh/1cr2x4ve","slide":5,"bbox":[65,344,925,114]}
+{"kind":"textbox","id":"sh/0byl4zu9","slide":5,"text":"PICKUP 전","textPreview":"PICKUP 전","textChars":8,"textLines":1,"bbox":[84,359,126,24]}
+{"kind":"textbox","id":"sh/q5cri1ov","slide":5,"text":"현재 정차 자세를 기준으로 포트의 QR을 읽어 PICK 위치를 보정","textPreview":"현재 정차 자세를 기준으로 포트의 QR을 읽어 PICK 위치를 보정","textChars":37,"textLines":1,"bbox":[225,354,720,34]}
+{"kind":"shape","id":"sh/r6l8r6p0","slide":5,"bbox":[85,398,860,0]}
+{"kind":"textbox","id":"sh/s7e9kb6l","slide":5,"text":"PLACE 전","textPreview":"PLACE 전","textChars":7,"textLines":1,"bbox":[84,410,126,24]}
+{"kind":"textbox","id":"sh/d8natg76","slide":5,"text":"작업 방향과 모델에 맞는 오프셋을 적용해 PLACE 목표 위치를 보정","textPreview":"작업 방향과 모델에 맞는 오프셋을 적용해 PLACE 목표 위치를 보정","textChars":38,"textLines":1,"bbox":[225,405,720,34]}
+{"kind":"shape","id":"sh/ihcru1oj","slide":5,"bbox":[65,495,24,24]}
+{"kind":"textbox","id":"sh/3il8nmp4","slide":5,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[65,495,24,24]}
+{"kind":"textbox","id":"sh/4ju9gr6p","slide":5,"text":"실행 조건과 인터록","textPreview":"실행 조건과 인터록","textChars":10,"textLines":1,"bbox":[99,495,316,24]}
+{"kind":"shape","id":"sh/5k3qpw7a","slide":5,"bbox":[65,538,210,92]}
+{"kind":"shape","id":"sh/udsrqhon","slide":5,"bbox":[79,552,22,22]}
+{"kind":"textbox","id":"sh/ve18jmp8","slide":5,"text":"✓","textPreview":"✓","textChars":1,"textLines":1,"bbox":[79,551,22,22]}
+{"kind":"textbox","id":"sh/zihori50","slide":5,"text":"QR 인식","textPreview":"QR 인식","textChars":5,"textLines":1,"bbox":[111,548,148,28]}
+{"kind":"textbox","id":"sh/yh8nid4f","slide":5,"text":"유효 샘플 확보 및 좌표 산출","textPreview":"유효 샘플 확보 및 좌표 산출","textChars":16,"textLines":1,"bbox":[79,582,182,35]}
+{"kind":"shape","id":"sh/lkz6tsnq","slide":5,"bbox":[297,538,210,92]}
+{"kind":"shape","id":"sh/kjq5knm5","slide":5,"bbox":[311,552,22,22]}
+{"kind":"textbox","id":"sh/7mhov25w","slide":5,"text":"✓","textPreview":"✓","textChars":1,"textLines":1,"bbox":[311,551,22,22]}
+{"kind":"textbox","id":"sh/ml87mx4b","slide":5,"text":"로봇 상태","textPreview":"로봇 상태","textChars":5,"textLines":1,"bbox":[343,548,148,28]}
+{"kind":"textbox","id":"sh/9oj6xsn2","slide":5,"text":"Busy / Complete / Error 확인","textPreview":"Busy / Complete / Error 확인","textChars":26,"textLines":1,"bbox":[311,582,182,35]}
+{"kind":"shape","id":"sh/8nqponmh","slide":5,"bbox":[529,538,210,92]}
+{"kind":"shape","id":"sh/nqxojy5s","slide":5,"bbox":[543,552,22,22]}
+{"kind":"textbox","id":"sh/2ponat47","slide":5,"text":"✓","textPreview":"✓","textChars":1,"textLines":1,"bbox":[543,551,22,22]}
+{"kind":"textbox","id":"sh/sv2lkz2p","slide":5,"text":"매거진 확인","textPreview":"매거진 확인","textChars":6,"textLines":1,"bbox":[575,548,148,28]}
+{"kind":"textbox","id":"sh/dwb2t43a","slide":5,"text":"Depth ROI로 존재 여부 판정","textPreview":"Depth ROI로 존재 여부 판정","textChars":19,"textLines":1,"bbox":[543,582,182,35]}
+{"kind":"shape","id":"sh/qtk3ipkz","slide":5,"bbox":[761,538,210,92]}
+{"kind":"shape","id":"sh/rutkrulk","slide":5,"bbox":[775,552,22,22]}
+{"kind":"textbox","id":"sh/4r2lgz2t","slide":5,"text":"✓","textPreview":"✓","textChars":1,"textLines":1,"bbox":[775,551,22,22]}
+{"kind":"textbox","id":"sh/5sb2pk3e","slide":5,"text":"안전 조건","textPreview":"안전 조건","textChars":5,"textLines":1,"bbox":[807,548,148,28]}
+{"kind":"textbox","id":"sh/i503epkn","slide":5,"text":"I/O 인터록과 비상정지 상태 확인","textPreview":"I/O 인터록과 비상정지 상태 확인","textChars":19,"textLines":1,"bbox":[775,582,182,35]}
+{"kind":"notes","id":"nt/cdnnhg","slide":5,"text":"Sources: docs/MainSequence.md; MoveSequenceRunner.cs (Steps 1–10, QR read, pickup/place selection, magazine detection and I/O checks). The current code includes last-value fallback when all five QR samples fail; production acceptance should define whether fallback is allowed."}
+{"kind":"slide","id":"sl/7xsopg","slide":6,"title":"위치 정밀도 검증 기준 및 POC 계획","textShapes":56}
+{"kind":"textbox","id":"sh/mpoveps7","slide":6,"text":"위치 정밀도 검증 기준 및 POC 계획","textPreview":"위치 정밀도 검증 기준 및 POC 계획","textChars":21,"textLines":1,"bbox":[40,20,720,42]}
+{"kind":"textbox","id":"sh/9sfe94by","slide":6,"text":"±50 mm 전 구간에서 QR 검출, 보정 적용, 매거진 작업 성공을 반복 검증","textPreview":"±50 mm 전 구간에서 QR 검출, 보정 적용, 매거진 작업 성공을 반복 검증","textChars":44,"textLines":1,"bbox":[42,57,700,24]}
+{"kind":"textbox","id":"sh/or6dgzad","slide":6,"text":"Confidential","textPreview":"Confidential","textChars":12,"textLines":1,"bbox":[860,14,140,16]}
+{"kind":"textbox","id":"sh/zmdc3utw","slide":6,"text":"NAMUGA AMR","textPreview":"NAMUGA AMR","textChars":10,"textLines":1,"bbox":[820,30,180,23]}
+{"kind":"textbox","id":"sh/el4vapsb","slide":6,"text":"Precision Handling System","textPreview":"Precision Handling System","textChars":25,"textLines":1,"bbox":[820,50,180,15]}
+{"kind":"shape","id":"sh/1ofe54b2","slide":6,"bbox":[40,72,960,0]}
+{"kind":"shape","id":"sh/0nmdczah","slide":6,"bbox":[1012,95,8,545]}
+{"kind":"textbox","id":"sh/rydczatk","slide":6,"text":"NAMUGA AMR","textPreview":"NAMUGA AMR","textChars":10,"textLines":1,"bbox":[996,240,42,200]}
+{"kind":"textbox","id":"sh/qx4v65sf","slide":6,"text":"Copyright © NAMUGA. 2026. All Rights Reserved.","textPreview":"Copyright © NAMUGA. 2026. All Rights Reserved.","textChars":46,"textLines":1,"bbox":[40,690,470,16]}
+{"kind":"textbox","id":"sh/kbed4nit","slide":6,"text":"6","textPreview":"6","textChars":1,"textLines":1,"bbox":[973,690,27,16]}
+{"kind":"shape","id":"sh/5cnexszy","slide":6,"bbox":[65,105,24,24]}
+{"kind":"textbox","id":"sh/i9wv2d0n","slide":6,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[65,105,24,24]}
+{"kind":"textbox","id":"sh/ja5wvih8","slide":6,"text":"시험 매트릭스","textPreview":"시험 매트릭스","textChars":7,"textLines":1,"bbox":[99,105,266,24]}
+{"kind":"shape","id":"sh/wned03ih","slide":6,"bbox":[65,148,580,220]}
+{"kind":"shape","id":"sh/xonet8z2","slide":6,"bbox":[65,148,580,34]}
+{"kind":"textbox","id":"sh/alcvyt0b","slide":6,"text":"시험 항목","textPreview":"시험 항목","textChars":5,"textLines":1,"bbox":[75,153,130,24]}
+{"kind":"textbox","id":"sh/vm5wryhw","slide":6,"text":"조건","textPreview":"조건","textChars":2,"textLines":1,"bbox":[220,153,105,24]}
+{"kind":"textbox","id":"sh/gjydc7y1","slide":6,"text":"반복","textPreview":"반복","textChars":2,"textLines":1,"bbox":[340,153,100,24]}
+{"kind":"textbox","id":"sh/1k7e5cz6","slide":6,"text":"판정 지표","textPreview":"판정 지표","textChars":5,"textLines":1,"bbox":[455,153,175,24]}
+{"kind":"textbox","id":"sh/p0nepsra","slide":6,"text":"정차 오프셋","textPreview":"정차 오프셋","textChars":6,"textLines":1,"bbox":[75,184,130,36]}
+{"kind":"textbox","id":"sh/ozudwnq5","slide":6,"text":"X/Y ±50 mm","textPreview":"X/Y ±50 mm","textChars":10,"textLines":1,"bbox":[220,184,105,36]}
+{"kind":"textbox","id":"sh/nylwn29k","slide":6,"text":"각 조건 10회","textPreview":"각 조건 10회","textChars":8,"textLines":1,"bbox":[340,184,100,36]}
+{"kind":"textbox","id":"sh/2xcvux8z","slide":6,"text":"QR 검출률 · 보정값","textPreview":"QR 검출률 · 보정값","textChars":12,"textLines":1,"bbox":[455,184,175,36]}
+{"kind":"shape","id":"sh/1w3elsre","slide":6,"bbox":[66,220,578,36]}
+{"kind":"textbox","id":"sh/0vudsnqt","slide":6,"text":"회전 편차","textPreview":"회전 편차","textChars":5,"textLines":1,"bbox":[75,220,130,36]}
+{"kind":"textbox","id":"sh/fulcji98","slide":6,"text":"±θ 조건","textPreview":"±θ 조건","textChars":5,"textLines":1,"bbox":[220,220,105,36]}
+{"kind":"textbox","id":"sh/etcvqd8n","slide":6,"text":"각 조건 10회","textPreview":"각 조건 10회","textChars":8,"textLines":1,"bbox":[340,220,100,36]}
+{"kind":"textbox","id":"sh/t8juh8ri","slide":6,"text":"각도 오차 · 접근 안정성","textPreview":"각도 오차 · 접근 안정성","textChars":14,"textLines":1,"bbox":[455,220,175,36]}
+{"kind":"textbox","id":"sh/s7ado3qx","slide":6,"text":"PICKUP","textPreview":"PICKUP","textChars":6,"textLines":1,"bbox":[75,256,130,36]}
+{"kind":"textbox","id":"sh/i1oj2pkj","slide":6,"text":"좌/우 슬롯","textPreview":"좌/우 슬롯","textChars":6,"textLines":1,"bbox":[220,256,105,36]}
+{"kind":"textbox","id":"sh/j2xkbul4","slide":6,"text":"LOAD/UNLOAD","textPreview":"LOAD/UNLOAD","textChars":11,"textLines":1,"bbox":[340,256,100,36]}
+{"kind":"textbox","id":"sh/k3614z29","slide":6,"text":"그립 성공 · 간섭 없음","textPreview":"그립 성공 · 간섭 없음","textChars":13,"textLines":1,"bbox":[455,256,175,36]}
+{"kind":"shape","id":"sh/5oz2dk3u","slide":6,"bbox":[66,292,578,36]}
+{"kind":"textbox","id":"sh/axojy5k7","slide":6,"text":"PLACE","textPreview":"PLACE","textChars":5,"textLines":1,"bbox":[75,292,130,36]}
+{"kind":"textbox","id":"sh/vyxk7als","slide":6,"text":"좌/우 슬롯","textPreview":"좌/우 슬롯","textChars":6,"textLines":1,"bbox":[220,292,105,36]}
+{"kind":"textbox","id":"sh/wz610f2d","slide":6,"text":"모델별","textPreview":"모델별","textChars":3,"textLines":1,"bbox":[340,292,100,36]}
+{"kind":"textbox","id":"sh/x0f29k3y","slide":6,"text":"안착 편차 · 완료 신호","textPreview":"안착 편차 · 완료 신호","textChars":13,"textLines":1,"bbox":[455,292,175,36]}
+{"kind":"textbox","id":"sh/mt4ju54b","slide":6,"text":"환경 변화","textPreview":"환경 변화","textChars":5,"textLines":1,"bbox":[75,328,130,36]}
+{"kind":"textbox","id":"sh/nud03alw","slide":6,"text":"조도·반사","textPreview":"조도·반사","textChars":5,"textLines":1,"bbox":[220,328,105,36]}
+{"kind":"textbox","id":"sh/zmxgf6pc","slide":6,"text":"대표 조건","textPreview":"대표 조건","textChars":5,"textLines":1,"bbox":[340,328,100,36]}
+{"kind":"textbox","id":"sh/elof61or","slide":6,"text":"검출률 · 재시도율","textPreview":"검출률 · 재시도율","textChars":10,"textLines":1,"bbox":[455,328,175,36]}
+{"kind":"shape","id":"sh/1ofyhg7i","slide":6,"bbox":[690,105,24,24]}
+{"kind":"textbox","id":"sh/0n6x8b6x","slide":6,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[690,105,24,24]}
+{"kind":"textbox","id":"sh/rixgb6pg","slide":6,"text":"정밀도 오차 예산","textPreview":"정밀도 오차 예산","textChars":9,"textLines":1,"bbox":[724,105,266,24]}
+{"kind":"shape","id":"sh/qh4f21ov","slide":6,"bbox":[690,148,300,220]}
+{"kind":"textbox","id":"sh/dkfydw7m","slide":6,"text":"카메라·Depth","textPreview":"카메라·Depth","textChars":9,"textLines":1,"bbox":[708,166,112,28]}
+{"kind":"textbox","id":"sh/cj6x4r61","slide":6,"text":"픽셀/거리 노이즈","textPreview":"픽셀/거리 노이즈","textChars":9,"textLines":1,"bbox":[825,166,145,28]}
+{"kind":"shape","id":"sh/3udg7mp4","slide":6,"bbox":[708,200,262,0]}
+{"kind":"textbox","id":"sh/2t4fyhoz","slide":6,"text":"좌표 변환","textPreview":"좌표 변환","textChars":5,"textLines":1,"bbox":[708,208,112,28]}
+{"kind":"textbox","id":"sh/8z2d8nmh","slide":6,"text":"축 방향·스케일","textPreview":"축 방향·스케일","textChars":8,"textLines":1,"bbox":[825,208,145,28]}
+{"kind":"shape","id":"sh/t0bu1sn2","slide":6,"bbox":[708,242,262,0]}
+{"kind":"textbox","id":"sh/6x0v6d4r","slide":6,"text":"협동로봇","textPreview":"협동로봇","textChars":4,"textLines":1,"bbox":[708,250,112,28]}
+{"kind":"textbox","id":"sh/7ytczi5w","slide":6,"text":"반복도·TCP","textPreview":"반복도·TCP","textChars":7,"textLines":1,"bbox":[825,250,145,28]}
+{"kind":"shape","id":"sh/gn2dc7mt","slide":6,"bbox":[708,284,262,0]}
+{"kind":"textbox","id":"sh/hobe5sne","slide":6,"text":"그리퍼/치공구","textPreview":"그리퍼/치공구","textChars":7,"textLines":1,"bbox":[708,292,112,28]}
+{"kind":"textbox","id":"sh/u1kvax4n","slide":6,"text":"기구 공차","textPreview":"기구 공차","textChars":5,"textLines":1,"bbox":[825,292,145,28]}
+{"kind":"textbox","id":"sh/fmtc3258","slide":6,"text":"최종 작업 정밀도 = 위 항목의 결합 결과","textPreview":"최종 작업 정밀도 = 위 항목의 결합 결과","textChars":23,"textLines":1,"bbox":[708,334,262,24]}
+{"kind":"shape","id":"sh/wrid03m9","slide":6,"bbox":[65,408,24,24]}
+{"kind":"textbox","id":"sh/xsrut8nu","slide":6,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[65,408,24,24]}
+{"kind":"textbox","id":"sh/dojax4fy","slide":6,"text":"권장 합격 기준","textPreview":"권장 합격 기준","textChars":8,"textLines":1,"bbox":[99,408,266,24]}
+{"kind":"shape","id":"sh/cnat4zyd","slide":6,"bbox":[65,450,98,32]}
+{"kind":"textbox","id":"sh/bmhsvuxs","slide":6,"text":"검출","textPreview":"검출","textChars":2,"textLines":1,"bbox":[65,450,98,32]}
+{"kind":"textbox","id":"sh/ql8b2pg7","slide":6,"text":"시험 위치 전 구간에서 QR 식별 및 유효 Depth 확보","textPreview":"시험 위치 전 구간에서 QR 식별 및 유효 Depth 확보","textChars":32,"textLines":1,"bbox":[180,449,810,34]}
+{"kind":"shape","id":"sh/lsja14fu","slide":6,"bbox":[65,495,98,32]}
+{"kind":"textbox","id":"sh/0rat8zy9","slide":6,"text":"좌표","textPreview":"좌표","textChars":2,"textLines":1,"bbox":[65,495,98,32]}
+{"kind":"textbox","id":"sh/zq1szuxo","slide":6,"text":"보정값의 부호·크기가 인위 오프셋 방향과 일치","textPreview":"보정값의 부호·크기가 인위 오프셋 방향과 일치","textChars":25,"textLines":1,"bbox":[180,494,810,34]}
+{"kind":"shape","id":"sh/ypsb6pg3","slide":6,"bbox":[65,540,98,32]}
+{"kind":"textbox","id":"sh/9g3a5ofq","slide":6,"text":"작업","textPreview":"작업","textChars":2,"textLines":1,"bbox":[65,540,98,32]}
+{"kind":"textbox","id":"sh/8futcjel","slide":6,"text":"PICKUP / PLACE 성공 및 충돌·과도한 재접근 없음","textPreview":"PICKUP / PLACE 성공 및 충돌·과도한 재접근 없음","textChars":33,"textLines":1,"bbox":[180,539,810,34]}
+{"kind":"shape","id":"sh/6pkzahsr","slide":6,"bbox":[65,585,98,32]}
+{"kind":"textbox","id":"sh/7qdgjm9c","slide":6,"text":"반복","textPreview":"반복","textChars":2,"textLines":1,"bbox":[65,585,98,32]}
+{"kind":"textbox","id":"sh/srmhcrax","slide":6,"text":"동일 조건의 최종 안착 편차가 고객 요구 공차 이내","textPreview":"동일 조건의 최종 안착 편차가 고객 요구 공차 이내","textChars":28,"textLines":1,"bbox":[180,584,810,34]}
+{"kind":"shape","id":"sh/tsvylwr2","slide":6,"bbox":[65,645,925,42]}
+{"kind":"textbox","id":"sh/ut4ze1sn","slide":6,"text":"POC 결과로 카메라 시야, 허용 오프셋, 재시도 기준, 포트·모델 보정값을 확정한 뒤 양산 기준서에 반영","textPreview":"POC 결과로 카메라 시야, 허용 오프셋, 재시도 기준, 포트·모델 보정값을 확정한 뒤 양산 기준서에 반영","textChars":59,"textLines":1,"bbox":[85,651,885,30]}
+{"kind":"notes","id":"nt/7xsopg","slide":6,"text":"정량 합격 공차와 회전 허용 범위는 사용자 입력이 없어 고객 요구사항으로 남김. 반복 횟수는 검증 계획 제안이며 실제 POC 협의 시 조정 가능."}
